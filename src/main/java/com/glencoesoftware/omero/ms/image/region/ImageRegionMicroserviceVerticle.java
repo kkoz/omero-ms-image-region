@@ -19,6 +19,7 @@
 package com.glencoesoftware.omero.ms.image.region;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
@@ -170,6 +171,11 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
 
         HttpServer server = vertx.createHttpServer(options);
         Router router = Router.router(vertx);
+
+        // Establish a unique identifier for every request
+        router.route().handler((event) -> {
+            event.put("omero_ms.request_id", UUID.randomUUID().toString());
+        });
 
         cacheControlHeader = config.getString("cache-control-header", "");
 
