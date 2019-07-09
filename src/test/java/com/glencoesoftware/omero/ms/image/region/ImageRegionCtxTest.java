@@ -115,77 +115,77 @@ public class ImageRegionCtxTest {
     public void testMissingImageId()
             throws JsonParseException, JsonMappingException, IOException {
         params.remove("imageId");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testImageIdFormat()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("imageId", "abc");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testMissingTheZ()
             throws JsonParseException, JsonMappingException, IOException {
         params.remove("theZ");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testTheZFormat()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("theZ", "abc");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testMissingTheT()
             throws JsonParseException, JsonMappingException, IOException {
         params.remove("theT");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testTheTFormat()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("theT", "abc");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testRegionFormat()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("region", "1,2,3,abc");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testChannelFormat()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("c", "-1|0:65535$0000FF,a|1755:51199$00FF00,3|3218:26623$FF0000");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testChannelFormatActive()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("c", "-1|0:65535$0000FF,a|1755:51199$00FF00,3|3218:26623$FF0000");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testChannelFormatRange()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("c", "-1|0:65535$0000FF,1|abc:51199$00FF00,3|3218:26623$FF0000");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testQualityFormat()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("q", "abc");
-        new ImageRegionCtx(params, "");
+        new ImageRegionCtx(params, "", "");
     }
 
     @Test
@@ -194,7 +194,7 @@ public class ImageRegionCtxTest {
         params.remove("region");
         params.add("tile", String.format("%d,%d,%d", resolution, tileX, tileY));
 
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -216,7 +216,7 @@ public class ImageRegionCtxTest {
         params.remove("region");
         params.add("m", "c");
 
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -238,7 +238,7 @@ public class ImageRegionCtxTest {
         params.remove("tile");
         params.add("m", "g");
 
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -257,7 +257,7 @@ public class ImageRegionCtxTest {
     @Test
     public void testCodomainMaps()
             throws JsonParseException, JsonMappingException, IOException {
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -275,7 +275,7 @@ public class ImageRegionCtxTest {
     public void testProjectionIntMax()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("p", "intmax");
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -290,7 +290,7 @@ public class ImageRegionCtxTest {
     public void testProjectionIntMean()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("p", "intmean");
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -305,7 +305,7 @@ public class ImageRegionCtxTest {
     public void testProjectionIntSum()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("p", "intsum");
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -320,7 +320,7 @@ public class ImageRegionCtxTest {
     public void testProjectionNormal()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("p", "normal");
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -334,7 +334,7 @@ public class ImageRegionCtxTest {
     public void testProjectionIntMeanStartEnd()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("p", "intmax|0:1");
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(
@@ -349,7 +349,7 @@ public class ImageRegionCtxTest {
     public void testProjectionIntMeanStartEndInvalid()
             throws JsonParseException, JsonMappingException, IOException {
         params.add("p", "intmax|a:b");
-        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "");
+        ImageRegionCtx imageCtx = new ImageRegionCtx(params, "", "");
         String data = Json.encode(imageCtx);
         ObjectMapper mapper = new ObjectMapper();
         ImageRegionCtx imageCtxDecoded = mapper.readValue(

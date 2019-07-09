@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 import org.perf4j.StopWatch;
 import org.perf4j.slf4j.Slf4JStopWatch;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.context.ApplicationContext;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -152,6 +153,8 @@ public class ImageRegionVerticle extends AbstractVerticle {
             message.fail(400, v);
             return;
         }
+        MDC.put("omeroSessionKey", imageRegionCtx.omeroSessionKey);
+        MDC.put("requestId", imageRegionCtx.requestId);
         log.debug(
             "Render image region request with data: {}", message.body());
         try (OmeroRequest request = new OmeroRequest(

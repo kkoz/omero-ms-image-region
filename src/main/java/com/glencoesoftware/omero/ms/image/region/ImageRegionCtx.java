@@ -37,6 +37,9 @@ public class ImageRegionCtx extends OmeroRequestCtx {
     private static final org.slf4j.Logger log =
             LoggerFactory.getLogger(ImageRegionCtx.class);
 
+    /** Unique identifier for the request to which this context belongs */
+    public String requestId;
+
     /** Image Id */
     public Long imageId;
 
@@ -112,8 +115,9 @@ public class ImageRegionCtx extends OmeroRequestCtx {
      * required for rendering an image region.
      * @param omeroSessionKey OMERO session key.
      */
-    ImageRegionCtx(MultiMap params, String omeroSessionKey) {
+    ImageRegionCtx(MultiMap params, String omeroSessionKey, String requestId) {
         this.omeroSessionKey = omeroSessionKey;
+        this.requestId = requestId;
         assignParams(params);
     }
 

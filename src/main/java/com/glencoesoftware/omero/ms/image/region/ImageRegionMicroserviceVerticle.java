@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
@@ -173,7 +174,10 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
 
         // Establish a unique identifier for every request
         router.route().handler((event) -> {
-            event.put("omero_ms.request_id", UUID.randomUUID().toString());
+            String requestId = UUID.randomUUID().toString();
+            event.put("omero_ms.request_id", requestId);
+            MDC.put("requestId", requestId);
+            event.next();
         });
 
         cacheControlHeader = config.getString("cache-control-header", "");
@@ -286,12 +290,14 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
      * @param event Current routing context.
      */
     private void renderImageRegion(RoutingContext event) {
-        log.info("Rendering image region");
         HttpServerRequest request = event.request();
         final ImageRegionCtx imageRegionCtx;
+        final String omeroSessionKey = event.get("omero.session_key");
+        final String requestId = event.get("omero_ms.request_id");
+        MDC.put("omeroSessionKey", omeroSessionKey);
         try {
             imageRegionCtx = new ImageRegionCtx(
-                    request.params(), event.get("omero.session_key"));
+                    request.params(), omeroSessionKey, requestId);
         } catch (IllegalArgumentException e) {
             HttpServerResponse response = event.response();
             response.setStatusCode(400).end(e.getMessage());
@@ -299,6 +305,7 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
         }
 
         final HttpServerResponse response = event.response();
+        log.info("Rendering image region");
         vertx.eventBus().<byte[]>send(
                 ImageRegionVerticle.RENDER_IMAGE_REGION_EVENT,
                 Json.encode(imageRegionCtx), result -> {
@@ -337,6 +344,8 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                 }
             } finally {
                 log.debug("Response ended");
+                MDC.remove("requestId");
+                MDC.remove("omeroSessionKey");
             }
         });
     }

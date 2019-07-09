@@ -53,7 +53,7 @@ public class ImageRegionRequestHandlerTest {
         params.add("theT", "0");
         params.add("m", "rgb");
 
-        imageRegionCtx = new ImageRegionCtx(params, "");
+        imageRegionCtx = new ImageRegionCtx(params, "", "");
         reqHandler = new ImageRegionRequestHandler(
                 imageRegionCtx,
                 null, //ApplicationContext context,
