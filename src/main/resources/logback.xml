@@ -3,7 +3,7 @@
 
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>%date [%thread] [%X{omeroSessionKey}/%X{requestId}] %-5level %logger{36} - %msg%n</pattern>
+      <pattern>%date [%thread] [%X{omeroSessionKey}/%X{requestId}] [%X{traceId}/%X{spanId}] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
 
