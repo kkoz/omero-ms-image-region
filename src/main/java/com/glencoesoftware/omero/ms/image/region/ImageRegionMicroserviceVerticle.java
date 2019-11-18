@@ -49,6 +49,7 @@ import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Handler;
+import io.vertx.core.MultiMap;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.ReplyException;
@@ -87,6 +88,8 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
     private static final String JMX_CONFIG =
             "---\n"
             + "startDelaySeconds: 0\n";
+
+    private static final Long THUMBNAIL_NOT_READY_TIMEOUT = 500l;
 
     /** OMERO server Spring application context. */
     private ApplicationContext context;
@@ -320,6 +323,44 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                 "/webgateway/render_shape_mask/:shapeId*")
             .handler(this::renderShapeMask);
 
+        // Thumbnail request handlers
+           router.get(
+                   "/webclient/render_thumbnail/size/:longestSide/:imageId*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webclient/render_thumbnail/:imageId*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webgateway/render_thumbnail/:imageId/:longestSide*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webgateway/render_thumbnail/:imageId*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webclient/render_birds_eye_view/:imageId/:longestSide*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webclient/render_birds_eye_view/:imageId*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webgateway/render_birds_eye_view/:imageId/:longestSide*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webgateway/render_birds_eye_view/:imageId*")
+               .handler(this::renderThumbnail);
+           router.get(
+                   "/webgateway/get_thumbnails/:longestSide*")
+               .handler(this::getThumbnails);
+           router.get(
+                   "/webgateway/get_thumbnails*")
+               .handler(this::getThumbnails);
+           router.get(
+                   "/webclient/get_thumbnails/:longestSide*")
+               .handler(this::getThumbnails);
+           router.get(
+                   "/webclient/get_thumbnails*")
+               .handler(this::getThumbnails);
+
         int port = config.getInteger("port");
         log.info("Starting HTTP server *:{}", port);
         server.requestHandler(router).listen(port,
@@ -487,6 +528,52 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                     log.debug("Response ended");
                 }
             });
+    }
+
+    private void renderThumbnail(RoutingContext event) {
+        final HttpServerRequest request = event.request();
+        final HttpServerResponse response = event.response();
+        MultiMap params = request.params();
+        ThumbnailCtx thumbnailCtx = new ThumbnailCtx(params,
+            event.get("omero.session_key"));
+        thumbnailCtx.injectCurrentTraceContext();
+        //Is it possible that
+        vertx.eventBus().<byte[]>request(
+            ThumbnailVerticle.RENDER_THUMBNAIL_ASYNC_EVENT,
+            Json.encode(thumbnailCtx), result -> {
+                response.setStatusCode(200);
+                response.end("Thumbnails Ready");
+        });
+        //Wait and return 'Thumbnail not ready' if we haven't replied
+        vertx.setTimer(THUMBNAIL_NOT_READY_TIMEOUT, id -> {
+            if(!response.ended()) {
+                response.setStatusCode(404);
+                response.end("Thumbnail(s) not ready");
+            }
+        });
+    }
+
+    private void getThumbnails(RoutingContext event) {
+        final HttpServerRequest request = event.request();
+        final HttpServerResponse response = event.response();
+        MultiMap params = request.params();
+        ThumbnailCtx thumbnailCtx = new ThumbnailCtx(params,
+            event.get("omero.session_key"));
+        thumbnailCtx.injectCurrentTraceContext();
+        //Is it possible that
+        vertx.eventBus().<byte[]>request(
+            ThumbnailVerticle.RENDER_THUMBNAIL_ASYNC_EVENT,
+            Json.encode(thumbnailCtx), result -> {
+                response.setStatusCode(200);
+                response.end("Thumbnails Ready");
+        });
+        //Wait and return 'Thumbnail not ready' if we haven't replied
+        vertx.setTimer(THUMBNAIL_NOT_READY_TIMEOUT, id -> {
+            if(!response.ended()) {
+                response.setStatusCode(404);
+                response.end("Thumbnail(s) not ready");
+            }
+        });
     }
 
     /**
