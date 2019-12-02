@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.LoggerFactory;
 
@@ -114,7 +115,6 @@ public class ThumbnailVerticle extends OmeroMsAbstractVerticle {
      * (Integer), and <code>imageId</code> (Long).
      */
     private void renderThumbnail(Message<String> message) {
-        /*
         ObjectMapper mapper = new ObjectMapper();
         ThumbnailCtx thumbnailCtx;
         log.info(message.body());
@@ -138,28 +138,29 @@ public class ThumbnailVerticle extends OmeroMsAbstractVerticle {
             "Render thumbnail request Image:{} longest side {} RenderingDef:{}",
             imageId, longestSide, renderingDefId.orElse(null));
 
-        try (OmeroRequest request = new OmeroRequest(
-                 host, port, omeroSessionKey)) {
-            byte[] thumbnail = request.execute(new ThumbnailRequestHandler(
-                    longestSide, imageId, renderingDefId)::renderThumbnail);
-            if (thumbnail == null) {
-                message.fail(404, "Cannot find Image:" + imageId);
-            } else {
-                message.reply(thumbnail);
-            }
-        } catch (PermissionDeniedException
-                 | CannotCreateSessionException e) {
-            String v = "Permission denied";
-            log.debug(v);
-            message.fail(403, v);
-        } catch (Exception e) {
-            String v = "Exception while retrieving thumbnail";
-            log.error(v, e);
-            message.fail(500, v);
-        } finally {
-            span.finish();
-        }
-        */
+        renderThumbnail(longestSide, imageId).whenComplete((thumbnail, t) ->
+            {
+                if(t != null) {
+                    if(t instanceof PermissionDeniedException ||
+                            t instanceof CannotCreateSessionException) {
+                            String v = "Permission denied";
+                            log.debug(v);
+                            message.fail(403, v);
+                    }
+                    else {
+                        String v = "Exception while retrieving thumbnail";
+                        log.error(v, t);
+                        message.fail(500, v);
+                    }
+                } else {
+                    if (thumbnail == null) {
+                        message.fail(404, "Cannot find Image:" + imageId);
+                    } else {
+                        message.reply(thumbnail);
+                    }
+                }
+                span.finish();
+            });
     }
 
     /**
@@ -173,7 +174,6 @@ public class ThumbnailVerticle extends OmeroMsAbstractVerticle {
      * (Integer), and <code>imageIds</code> (List<Long>).
      */
     private void getThumbnails(Message<String> message) {
-        /*
         ObjectMapper mapper = new ObjectMapper();
         ThumbnailCtx thumbnailCtx;
         try {
@@ -197,6 +197,35 @@ public class ThumbnailVerticle extends OmeroMsAbstractVerticle {
         log.debug(
             "Render thumbnail request ImageIds:{} longest side {}",
             imageIds, longestSide);
+
+        renderThumbnails(longestSide, imageIds).whenComplete((thumbnails, t) -> {
+            if(t != null) {
+                if(t instanceof PermissionDeniedException ||
+                        t instanceof CannotCreateSessionException) {
+                        String v = "Permission denied";
+                        log.debug(v);
+                        message.fail(403, v);
+                }
+                else {
+                    String v = "Exception while retrieving thumbnail";
+                    log.error(v, t);
+                    message.fail(500, v);
+                }
+            } else {
+                if (thumbnails == null) {
+                    message.fail(404, "Cannot find one or more Images");
+                } else {
+                    Map<Long, String> thumbnailsJson = new HashMap<Long, String>();
+                    for (Entry<Long, byte[]> v : thumbnails.entrySet()) {
+                        thumbnailsJson.put(
+                            v.getKey(),
+                            "data:image/jpeg;base64," + Base64.encode(v.getValue())
+                        );
+                    }
+                    message.reply(Json.encode(thumbnailsJson));
+                }
+            }
+        });
 
         try (OmeroRequest request = new OmeroRequest(
                 host, port, omeroSessionKey)) {
@@ -228,7 +257,19 @@ public class ThumbnailVerticle extends OmeroMsAbstractVerticle {
         } finally {
             span.finish();
         }
-        */
     }
 
+    private CompletableFuture<byte[]> renderThumbnail(int longestSide, long imageId){
+        ThumbnailRequestHandler thumbnailRequestHandler =
+            new ThumbnailRequestHandler(longestSide, imageId);
+        return thumbnailRequestHandler.renderThumbnail();
+
+    }
+
+    private CompletableFuture<Map<Long, byte[]>> renderThumbnails(int longestSide, List<Long> imageIds){
+        ThumbnailsRequestHandler thumbnailsRequestHandler =
+            new ThumbnailsRequestHandler(longestSide, imageIds);
+        return thumbnailsRequestHandler.renderThumbnails();
+
+    }
 }
