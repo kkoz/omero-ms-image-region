@@ -19,6 +19,7 @@
 package com.glencoesoftware.omero.ms.image.region;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ import brave.ScopedSpan;
 import brave.Tracing;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.eventbus.Message;
+import io.vertx.core.eventbus.ReplyException;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -138,16 +140,15 @@ public class ThumbnailVerticle extends OmeroMsAbstractVerticle {
             "Render thumbnail request Image:{} longest side {} RenderingDef:{}",
             imageId, longestSide, renderingDefId.orElse(null));
 
-        renderThumbnail(longestSide, imageId).whenComplete((thumbnail, t) ->
+        renderThumbnail(omeroSessionKey, longestSide, imageId).whenComplete((thumbnail, t) ->
             {
                 if(t != null) {
-                    if(t instanceof PermissionDeniedException ||
-                            t instanceof CannotCreateSessionException) {
-                            String v = "Permission denied";
-                            log.debug(v);
-                            message.fail(403, v);
-                    }
-                    else {
+                    if (t instanceof ReplyException) {
+                        // Downstream event handling failure, propagate it
+                        span.finish();
+                        message.fail(
+                            ((ReplyException) t).failureCode(), t.getMessage());
+                    } else {
                         String v = "Exception while retrieving thumbnail";
                         log.error(v, t);
                         message.fail(500, v);
@@ -200,68 +201,40 @@ public class ThumbnailVerticle extends OmeroMsAbstractVerticle {
 
         renderThumbnails(longestSide, imageIds).whenComplete((thumbnails, t) -> {
             if(t != null) {
-                if(t instanceof PermissionDeniedException ||
-                        t instanceof CannotCreateSessionException) {
-                        String v = "Permission denied";
-                        log.debug(v);
-                        message.fail(403, v);
-                }
-                else {
+                if (t instanceof ReplyException) {
+                    // Downstream event handling failure, propagate it
+                    span.finish();
+                    message.fail(
+                        ((ReplyException) t).failureCode(), t.getMessage());
+                } else {
                     String v = "Exception while retrieving thumbnail";
                     log.error(v, t);
+                    span.finish();
                     message.fail(500, v);
                 }
             } else {
                 if (thumbnails == null) {
+                    span.finish();
                     message.fail(404, "Cannot find one or more Images");
                 } else {
                     Map<Long, String> thumbnailsJson = new HashMap<Long, String>();
                     for (Entry<Long, byte[]> v : thumbnails.entrySet()) {
                         thumbnailsJson.put(
                             v.getKey(),
-                            "data:image/jpeg;base64," + Base64.encode(v.getValue())
+                            "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(v.getValue())
                         );
                     }
+                    span.finish();
                     message.reply(Json.encode(thumbnailsJson));
                 }
             }
         });
-
-        try (OmeroRequest request = new OmeroRequest(
-                host, port, omeroSessionKey)) {
-            Map<Long, byte[]> thumbnails = request.execute(
-                    new ThumbnailsRequestHandler(
-                            longestSide, imageIds)::renderThumbnails);
-
-            if (thumbnails == null) {
-                message.fail(404, "Cannot find one or more Images");
-            } else {
-                Map<Long, String> thumbnailsJson = new HashMap<Long, String>();
-                for (Entry<Long, byte[]> v : thumbnails.entrySet()) {
-                    thumbnailsJson.put(
-                        v.getKey(),
-                        "data:image/jpeg;base64," + Base64.encode(v.getValue())
-                    );
-                }
-                message.reply(Json.encode(thumbnailsJson));
-            }
-        } catch (PermissionDeniedException
-                 | CannotCreateSessionException e) {
-            String v = "Permission denied";
-            log.debug(v);
-            message.fail(403, v);
-        } catch (Exception e) {
-            String v = "Exception while retrieving thumbnail";
-            log.error(v, e);
-            message.fail(500, v);
-        } finally {
-            span.finish();
-        }
     }
 
-    private CompletableFuture<byte[]> renderThumbnail(int longestSide, long imageId){
+    private CompletableFuture<byte[]> renderThumbnail(ThumbnailCtx thumbnailCtx,
+            int longestSide, long imageId){
         ThumbnailRequestHandler thumbnailRequestHandler =
-            new ThumbnailRequestHandler(longestSide, imageId);
+            new ThumbnailRequestHandler(thumbnailCtx, longestSide, imageId);
         return thumbnailRequestHandler.renderThumbnail();
 
     }
