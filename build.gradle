@@ -125,9 +125,22 @@ task memoRegenStartScript(type: CreateStartScripts) {
     applicationName = "memoregenerator"
 }
 
+task virtualHEStartScript(type: CreateStartScripts) {
+    mainClassName = "com.glencoesoftware.omero.ms.image.region.VirtualHE"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+    applicationName = "virtualhe"
+}
+
 applicationDistribution.into("bin") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(memoRegenStartScript)
+    fileMode = 0755
+}
+
+applicationDistribution.into("bin") {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(virtualHEStartScript)
     fileMode = 0755
 }
 
