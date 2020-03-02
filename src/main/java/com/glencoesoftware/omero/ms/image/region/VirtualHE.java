@@ -24,9 +24,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.concurrent.Callable;
 
 import javax.imageio.ImageIO;
@@ -37,6 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
 
@@ -54,6 +52,11 @@ public class VirtualHE implements Callable<Void> {
         )
     private String file;
 
+    @Option(names = {"-a", "--algorithm"},
+            description = "The pixel value conversion algorithm. One of {"
+                    + "NO_MAPPING, VIRTUAL_TRANSILLUMINATION, TAO, EQN1}",
+            required = true)
+    ConversionAlgorithm alg;
 
     private static final Logger log =
             LoggerFactory.getLogger(VirtualHE.class);
@@ -79,17 +82,17 @@ public class VirtualHE implements Callable<Void> {
 
     public int taoTest(double r, double g) {
         double scale = 5.076/4*.7;
-        double tmpR = 0.9 - r*1.0*scale - 0.5* g*scale;
-        double tmpG = 1.1 - Math.sqrt(r*1.33*scale + 1.25 * g*scale) ;
-        double tmpB = 0.9 - r*0.5*scale  - g*scale;
+        double tmpR = Math.max(0.9 - r*1.0*scale - 0.5* g*scale, 0);
+        double tmpG = Math.max(1.1 - Math.sqrt(r*1.33*scale + 1.25 * g*scale), 0);
+        double tmpB = Math.max(0.9 - r*0.5*scale  - g*scale, 0);
 
         return getRgb(tmpR, tmpG, tmpB);
     }
 
     public int eqn1(double r, double g) {
-        double tmpR = 1.0 - r*(1.0-0.3) - g*(1.0-1.00);
-        double tmpG = 1.0 - r*(1.0-0.2) - g*(1.0-0.55);
-        double tmpB = 1.0 - r*(1.0-1.0) - g*(1.0-0.88);
+        double tmpR = Math.max(1.0 - r*(1.0-0.3) - g*(1.0-1.00), 0);
+        double tmpG = Math.max(1.0 - r*(1.0-0.2) - g*(1.0-0.55), 0);
+        double tmpB = Math.max(1.0 - r*(1.0-1.0) - g*(1.0-0.88), 0);
 
         return getRgb(tmpR, tmpG, tmpB);
     }
@@ -150,6 +153,14 @@ public class VirtualHE implements Callable<Void> {
         }
     }
 
+    public String getOutputFileName(String inputFileName, ConversionAlgorithm alg) {
+        String outputFileName = inputFileName.substring(0, inputFileName.indexOf('.'));
+        StringBuilder sb = new StringBuilder(outputFileName)
+                .append("_" + alg.toString())
+                .append(".png");
+        return sb.toString();
+    }
+
     @Override
     public Void call() throws Exception {
         byte[] bytes = IOUtils.toByteArray(new FileInputStream(file));
@@ -171,24 +182,12 @@ public class VirtualHE implements Callable<Void> {
                 greenDoubleValues[i][j] = ((double) greenPixelValues[i][j])/16384.0;//2^14 - the max value
             }
         }
-        /*
+
         BufferedImage image = new BufferedImage(1024, 1024, BufferedImage.TYPE_INT_RGB);
-        loadImage(1024, 1024, redPixelValues, greenPixelValues, image);
-        File outputFile = new File("/home/kevin/code/omero-ms-image-region/output.png");
+        loadImage(1024, 1024, redDoubleValues, greenDoubleValues, image, alg);
+        File outputFile = new File(getOutputFileName(file, alg));
         ImageIO.write(image, "png", outputFile);
-        */
-        BufferedImage image = new BufferedImage(1024, 1024, BufferedImage.TYPE_INT_RGB);
-        loadImage(1024, 1024, redDoubleValues, greenDoubleValues, image, ConversionAlgorithm.VIRTUAL_TRANSILLUMINATION);
-        File outputFile = new File("./virtual_transillumination.png");
-        ImageIO.write(image, "png", outputFile);
-        image = new BufferedImage(1024, 1024, BufferedImage.TYPE_INT_RGB);
-        loadImage(1024, 1024, redDoubleValues, greenDoubleValues, image, ConversionAlgorithm.TAO);
-        outputFile = new File("./tao.png");
-        ImageIO.write(image, "png", outputFile);
-        image = new BufferedImage(1024, 1024, BufferedImage.TYPE_INT_RGB);
-        loadImage(1024, 1024, redDoubleValues, greenDoubleValues, image, ConversionAlgorithm.EQN1);
-        outputFile = new File("./eqn1.png");
-        ImageIO.write(image, "png", outputFile);
+
         log.info("Done!");
         return null;
     }
