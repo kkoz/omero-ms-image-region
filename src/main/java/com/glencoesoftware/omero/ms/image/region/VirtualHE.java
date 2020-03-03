@@ -82,30 +82,25 @@ public class VirtualHE implements Callable<Void> {
 
     public int taoTest(double r, double g) {
         double scale = 5.076/4*.7;
-        double tmpR = Math.max(0.9 - r*1.0*scale - 0.5* g*scale, 0);
-        double tmpG = Math.max(1.1 - Math.sqrt(r*1.33*scale + 1.25 * g*scale), 0);
-        double tmpB = Math.max(0.9 - r*0.5*scale  - g*scale, 0);
+        double tmpR = 0.9 - r*1.0*scale - 0.5* g*scale;
+        double tmpG = 1.1 - Math.sqrt(r*1.33*scale + 1.25 * g*scale);
+        double tmpB = 0.9 - r*0.5*scale  - g*scale;
 
         return getRgb(tmpR, tmpG, tmpB);
     }
 
     public int eqn1(double r, double g) {
-        double tmpR = Math.max(1.0 - r*(1.0-0.3) - g*(1.0-1.00), 0);
-        double tmpG = Math.max(1.0 - r*(1.0-0.2) - g*(1.0-0.55), 0);
-        double tmpB = Math.max(1.0 - r*(1.0-1.0) - g*(1.0-0.88), 0);
+        double tmpR = 1.0 - r*(1.0-0.3) - g*(1.0-1.00);
+        double tmpG = 1.0 - r*(1.0-0.2) - g*(1.0-0.55);
+        double tmpB = 1.0 - r*(1.0-1.0) - g*(1.0-0.88);
 
         return getRgb(tmpR, tmpG, tmpB);
     }
 
-    public int getRgb(short r, short g, short b) {
-        int rgb = r/64;
-        rgb = (rgb << 8) + g/64;
-        rgb = (rgb << 8) + b/64;
-        return rgb;
-    }
-
-
     public int getRgb(double r, double g, double b) {
+        r = Math.min(Math.max(r, 0), 1);
+        g = Math.min(Math.max(g, 0), 1);
+        b = Math.min(Math.max(b, 0), 1);
         int rgb = (int) Math.round(r*255);
         rgb = (rgb << 8) + (int) Math.round(g*255);
         rgb = (rgb << 8) + (int) Math.round(b*255);
