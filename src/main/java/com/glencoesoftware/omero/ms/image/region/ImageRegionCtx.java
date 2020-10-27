@@ -101,6 +101,9 @@ public class ImageRegionCtx extends OmeroRequestCtx {
     /** Whether or not to flip vertically */
     public boolean flipVertical;
 
+    /** Scale the longest side to this value */
+    public Integer longestSide;
+
     /**
      * Constructor for jackson to decode the object from string
      */
@@ -142,6 +145,7 @@ public class ImageRegionCtx extends OmeroRequestCtx {
             this.maps = Json.decodeValue(maps, List.class);
         }
         format = Optional.ofNullable(params.get("format")).orElse("jpeg");
+        longestSide = params.contains("longestSide") ? getIntegerFromString(params.get("longestSide")) : null;
 
         log.debug(
                 "{}, z: {}, t: {}, tile: {}, c: [{}, {}, {}], m: {}, " +

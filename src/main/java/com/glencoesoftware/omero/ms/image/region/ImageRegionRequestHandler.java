@@ -19,6 +19,8 @@
 package com.glencoesoftware.omero.ms.image.region;
 
 import java.awt.Dimension;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -71,6 +73,8 @@ import omero.api.IQueryPrx;
 import omero.api.ServiceFactoryPrx;
 import omero.sys.ParametersI;
 import omero.util.IceMapper;
+
+import com.mortennobel.imagescaling.ResampleOp;
 
 public class ImageRegionRequestHandler {
 
@@ -241,8 +245,7 @@ public class ImageRegionRequestHandler {
                 .startScopedSpan("get_pixel_buffer");
         span.tag("omero.pixels_id", pixels.getId().toString());
         try {
-            PixelBuffer pb = pixelsService.getTiledbPixelBuffer(pixels, ngffDir);
-            return pixelsService.getPixelBuffer(pixels, false);
+            return pixelsService.getTiledbPixelBuffer(pixels, ngffDir);
         } finally {
             span.finish();
         }
@@ -421,6 +424,11 @@ public class ImageRegionRequestHandler {
         BufferedImage image = ImageUtil.createBufferedImage(
             buf, sizeX, sizeY
         );
+        if (imageRegionCtx.longestSide != null) {
+            int longestSide = imageRegionCtx.longestSide;
+            float scale = sizeX >= sizeY ? (float) longestSide/sizeX : (float) longestSide/sizeY;
+            image = scaleBufferedImage(image, scale, scale);
+        }
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         if (format.equals("jpeg")) {
             compressionSrv.compressToStream(image, output);
@@ -741,5 +749,34 @@ public class ImageRegionRequestHandler {
             log.error("Error while parsing color: {}", color, e);
         }
         return null;
+    }
+
+    public BufferedImage scaleBufferedImage(BufferedImage image, float xScale,
+            float yScale) {
+        int thumbHeight = (int) (image.getHeight() * yScale);
+        int thumbWidth = (int) (image.getWidth() * xScale);
+        if (thumbHeight < 3)
+            thumbHeight = 3;
+        if (thumbWidth < 3)
+            thumbWidth = 3;
+
+        log.info("Scaling to: " + thumbHeight + "x" + thumbWidth);
+
+        BufferedImage toReturn;
+        if (image.getHeight() >= 3 && image.getWidth() >= 3) {
+            ResampleOp resampleOp = new ResampleOp(thumbWidth, thumbHeight);
+            toReturn = resampleOp.filter(image, null);
+        } else {
+            toReturn = new BufferedImage(thumbWidth, thumbHeight,
+                    image.getType());
+            Graphics2D g = toReturn.createGraphics();
+            g.getRenderingHints().add(
+                    new RenderingHints(RenderingHints.KEY_ANTIALIASING,
+                            RenderingHints.VALUE_ANTIALIAS_OFF));
+            g.drawImage(image, 0, 0, thumbWidth, thumbHeight, 0, 0,
+                    image.getWidth(), image.getHeight(), null);
+            g.dispose();
+        }
+        return toReturn;
     }
 }

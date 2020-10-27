@@ -76,4 +76,13 @@
         class="com.glencoesoftware.omero.ms.image.region.ShapeMaskVerticle"
         scope="prototype">
   </bean>
+
+  <bean id="omero-ms-thumbnail-verticle"
+        class="com.glencoesoftware.omero.ms.image.region.ThumbnailVerticle"
+        scope="prototype">
+    <constructor-arg ref="/OMERO/Pixels2" />
+    <constructor-arg ref="internal-ome.api.ICompress" />
+    <constructor-arg ref="lutProvider" />
+    <constructor-arg value="${omero.pixeldata.max_tile_length:2048}" />
+  </bean>
 </beans>

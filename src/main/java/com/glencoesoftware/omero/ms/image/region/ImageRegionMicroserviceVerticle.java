@@ -31,6 +31,8 @@ import com.glencoesoftware.omero.ms.core.OmeroWebJDBCSessionStore;
 import com.glencoesoftware.omero.ms.core.OmeroWebRedisSessionStore;
 import com.glencoesoftware.omero.ms.core.OmeroWebSessionStore;
 import com.glencoesoftware.omero.ms.core.PrometheusSpanHandler;
+import com.glencoesoftware.omero.ms.image.region.ThumbnailCtx;
+import com.glencoesoftware.omero.ms.image.region.ThumbnailVerticle;
 import com.glencoesoftware.omero.ms.core.OmeroWebSessionRequestHandler;
 import com.glencoesoftware.omero.ms.core.LogSpanReporter;
 import com.glencoesoftware.omero.ms.core.OmeroHttpTracingHandler;
@@ -42,6 +44,7 @@ import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Handler;
+import io.vertx.core.MultiMap;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
@@ -61,6 +64,7 @@ import omero.model.Image;
 import zipkin2.Span;
 import zipkin2.reporter.AsyncReporter;
 import zipkin2.reporter.okhttp3.OkHttpSender;
+import brave.ScopedSpan;
 import brave.Tracing;
 import brave.http.HttpTracing;
 import brave.sampler.Sampler;
@@ -245,6 +249,13 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                         .setWorkerPoolName("render-shape-mask-pool")
                         .setWorkerPoolSize(workerPoolSize)
                         .setConfig(config));
+        vertx.deployVerticle("omero:omero-ms-thumbnail-verticle",
+                new DeploymentOptions()
+                        .setWorker(true)
+                        .setInstances(workerPoolSize)
+                        .setWorkerPoolName("thumbnail-pool")
+                        .setWorkerPoolSize(workerPoolSize)
+                        .setConfig(config));
 
         HttpServerOptions options = new HttpServerOptions();
         options.setMaxInitialLineLength(config.getInteger(
@@ -332,6 +343,9 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
         router.get(
                 "/webclient/render_image/:imageId/:theZ/:theT*")
             .handler(this::renderImageRegion);
+        router.get(
+                "/omero_ms_image_region/render_ngff_thumbnail/:imageId/:longestSide*")
+            .handler(this::renderNgffThumbnail);
 
         // ShapeMask request handlers
         router.get(
@@ -343,6 +357,44 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
         router.get(
                 "/omero_ms_image_region/get_label_image_metadata/:shapeId*")
             .handler(this::getLabelImageMetadata);
+
+     // Thumbnail request handlers
+        router.get(
+                "/webclient/render_thumbnail/size/:longestSide/:imageId*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webclient/render_thumbnail/:imageId*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webgateway/render_thumbnail/:imageId/:longestSide*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webgateway/render_thumbnail/:imageId*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webclient/render_birds_eye_view/:imageId/:longestSide*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webclient/render_birds_eye_view/:imageId*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webgateway/render_birds_eye_view/:imageId/:longestSide*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webgateway/render_birds_eye_view/:imageId*")
+            .handler(this::renderThumbnail);
+        router.get(
+                "/webgateway/get_thumbnails/:longestSide*")
+            .handler(this::getThumbnails);
+        router.get(
+                "/webgateway/get_thumbnails*")
+            .handler(this::getThumbnails);
+        router.get(
+                "/webclient/get_thumbnails/:longestSide*")
+            .handler(this::getThumbnails);
+        router.get(
+                "/webclient/get_thumbnails*")
+            .handler(this::getThumbnails);
 
         MAX_ACTIVE_CHANNELS = config.getInteger("max-active-channels", 6);
 
@@ -506,6 +558,7 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
         });
     }
 
+
     /**
      * Render shape mask event handler.
      * Responds with a <code>image/png</code> body on success based
@@ -611,6 +664,145 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                         "Content-Length",
                         String.valueOf(metadataJson.encodePrettily().length()));
                 response.write(metadataJson.encodePrettily());
+            } finally {
+                if (!response.closed()) {
+                    response.end();
+                }
+                log.debug("Response ended");
+            }
+        });
+    }
+
+    //*****THUMBNAIL**********//
+    /**
+     * Render thumbnail event handler. Responds with a <code>image/jpeg</code>
+     * body on success based on the <code>longestSide</code> and
+     * <code>imageId</code> encoded in the URL or HTTP 404 if the {@link Image}
+     * does not exist or the user does not have permissions to access it.
+     * @param event Current routing context.
+     */
+    private void renderThumbnail(RoutingContext event) {
+        ScopedSpan span = Tracing.currentTracer().startScopedSpan("ms_render_thumbnail");
+        final HttpServerRequest request = event.request();
+        final HttpServerResponse response = event.response();
+        MultiMap params = request.params();
+        final ThumbnailCtx thumbnailCtx;
+        try {
+            thumbnailCtx = new ThumbnailCtx(params,
+                    event.get("omero.session_key"));
+        } catch (IllegalArgumentException e) {
+            if (!response.closed()) {
+                response.setStatusCode(400).end(e.getMessage());
+            }
+            return;
+        }
+
+        thumbnailCtx.injectCurrentTraceContext();
+        vertx.eventBus().<byte[]>request(
+                ThumbnailVerticle.RENDER_THUMBNAIL_EVENT,
+                Json.encode(thumbnailCtx), result -> {
+            try {
+                if (handleResultFailed(result, response)) {
+                    return;
+                }
+                byte[] thumbnail = result.result().body();
+                response.headers().set("Content-Type", "image/jpeg");
+                response.headers().set(
+                        "Content-Length",
+                        String.valueOf(thumbnail.length));
+                response.write(Buffer.buffer(thumbnail));
+            } finally {
+                if (!response.closed()) {
+                    response.end();
+                }
+                span.finish();
+                log.debug("Response ended");
+            }
+        });
+    }
+
+    /**
+     * Get thumbnails event handler. Responds with a JSON dictionary of Base64
+     * encoded <code>image/jpeg</code> thumbnails keyed by {@link Image}
+     * identifier. Each dictionary value is prefixed with
+     * <code>data:image/jpeg;base64,</code> so that it can be used with
+     * <a href="http://caniuse.com/#feat=datauri">data URIs</a>.
+     * @param event Current routing context.
+     */
+    private void getThumbnails(RoutingContext event) {
+        ScopedSpan span = Tracing.currentTracer().startScopedSpan("ms_get_thumbnails");
+        final HttpServerRequest request = event.request();
+        final HttpServerResponse response = event.response();
+        final String callback = request.getParam("callback");
+        MultiMap params = request.params();
+        final ThumbnailCtx thumbnailCtx;
+        try {
+            thumbnailCtx = new ThumbnailCtx(params,
+                    event.get("omero.session_key"));
+        } catch (IllegalArgumentException e) {
+            if (!response.closed()) {
+                response.setStatusCode(400).end(e.getMessage());
+            }
+            return;
+        }
+        thumbnailCtx.injectCurrentTraceContext();
+
+        vertx.eventBus().<String>request(
+                ThumbnailVerticle.GET_THUMBNAILS_EVENT,
+                Json.encode(thumbnailCtx), result -> {
+            try {
+                if (handleResultFailed(result, response)) {
+                    return;
+                }
+                String json = result.result().body();
+                String contentType = "application/json";
+                if (callback != null) {
+                    json = String.format("%s(%s);", callback, json);
+                    contentType = "application/javascript";
+                }
+                response.headers().set("Content-Type", contentType);
+                response.headers().set(
+                        "Content-Length", String.valueOf(json.length()));
+                response.write(json);
+            } finally {
+                if (!response.closed()) {
+                    response.end();
+                }
+                span.finish();
+                log.debug("Response ended");
+            }
+        });
+    }
+
+    /**
+     * Render ngff thumbnail handler.
+     * Responds with a <code>image/png</code> body on success based
+     * on the <code>shapeId</code> encoded in the URL or HTTP 404 if the
+     * {@link Shape} does not exist or the user does not have permissions to
+     * access it.
+     * @param event Current routing context.
+     */
+    private void renderNgffThumbnail(RoutingContext event) {
+        log.info("Rendering shape mask");
+        HttpServerRequest request = event.request();
+        ThumbnailCtx thumbnailCtx = new ThumbnailCtx(
+                request.params(), event.get("omero.session_key"));
+        thumbnailCtx.injectCurrentTraceContext();
+
+        final HttpServerResponse response = event.response();
+        vertx.eventBus().<byte[]>request(
+                ThumbnailVerticle.RENDER_NGFF_THUMBNAIL,
+                Json.encode(thumbnailCtx), result -> {
+            try {
+                if (handleResultFailed(result, response)) {
+                    return;
+                }
+                byte[] shapeMask = result.result().body();
+                response.headers().set("Content-Type", "image/png");
+                response.headers().set(
+                        "Content-Length",
+                        String.valueOf(shapeMask.length));
+                response.write(Buffer.buffer(shapeMask));
             } finally {
                 if (!response.closed()) {
                     response.end();
