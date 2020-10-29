@@ -895,7 +895,6 @@ public class ImageRegionRequestHandler {
                         Arrays.asList(pixels.getSizeX(), pixels.getSizeY()));
             }
             planeDef.setRegion(getWholeRegionDef(resolutionLevels, pixelBuffer));
-            //updateSettingsThumbnail(renderer);
             span = Tracing.currentTracer().startScopedSpan("render");
             span.tag("omero.pixels_id", pixels.getId().toString());
             try {
@@ -927,8 +926,6 @@ public class ImageRegionRequestHandler {
             Renderer renderer, List<List<Integer>> resolutionLevels,
             Pixels pixels, PlaneDef planeDef)
                     throws ServerError, IOException, QuantizationException {
-        //checkPlaneDef(resolutionLevels, planeDef);
-
         Tracer tracer = Tracing.currentTracer();
         ScopedSpan span1 = tracer.startScopedSpan("render_as_packed_int");
         span1.tag("omero.pixels_id", pixels.getId().toString());
@@ -978,52 +975,5 @@ public class ImageRegionRequestHandler {
         regionDef.setWidth(sizeX);
         regionDef.setHeight(sizeY);
         return regionDef;
-    }
-
-    /**
-     * Update settings on the rendering engine based on the current context.
-     * @param renderer fully initialized renderer
-     * @param sizeC number of channels
-     * @param ctx OMERO context (group)
-     * @throws ServerError
-     */
-    private void updateSettingsThumbnail(Renderer renderer) throws ServerError {
-        log.debug("Setting active channels");
-        int idx = 0; // index of windows/colors args
-        for (int c = 0; c < renderer.getMetadata().getSizeC(); c++) {
-            /*
-            log.debug("Setting for channel {}", c);
-            boolean isActive = imageRegionCtx.channels.contains(c + 1);
-            log.debug("\tChannel active {}", isActive);
-            renderer.setActive(c, isActive);
-            */
-            renderer.setActive(c, true);
-
-            if (thumbnailCtx.windows != null) {
-                double min = (double) thumbnailCtx.windows.get(idx)[0];
-                double max = (double) thumbnailCtx.windows.get(idx)[1];
-                log.debug("\tMin-Max: [{}, {}]", min, max);
-                renderer.setChannelWindow(c, min, max);
-            }
-            if (thumbnailCtx.colors != null) {
-                String color = thumbnailCtx.colors.get(idx);
-                if (color.endsWith(".lut")) {
-                    renderer.setChannelLookupTable(c, color);
-                    log.debug("\tLUT: {}", color);
-                } else {
-                    int[] rgba = splitHTMLColor(color);
-                    renderer.setRGBA(c, rgba[0], rgba[1],rgba[2], rgba[3]);
-                    log.debug("\tColor: [{}, {}, {}, {}]",
-                              rgba[0], rgba[1], rgba[2], rgba[3]);
-                }
-            }
-            idx += 1;
-        }
-        for (RenderingModel renderingModel : renderingModels) {
-            if ("rgb".equals(renderingModel.getValue())) {
-                renderer.setModel(renderingModel);
-                break;
-            }
-        }
     }
 }
