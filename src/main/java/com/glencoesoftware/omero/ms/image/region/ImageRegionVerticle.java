@@ -56,6 +56,9 @@ public class ImageRegionVerticle extends OmeroMsAbstractVerticle {
     public static final String RENDER_IMAGE_REGION_PNG_EVENT =
             "omero.render_image_region_png";
 
+    public static final String RENDER_NGFF_THUMBNAIL =
+            "omero.render_ngff_thumbnail";
+
     /** OMERO server host */
     private String host;
 
@@ -117,6 +120,10 @@ public class ImageRegionVerticle extends OmeroMsAbstractVerticle {
             vertx.eventBus().<String>consumer(
                     RENDER_IMAGE_REGION_EVENT, event -> {
                         renderImageRegion(event);
+                    });
+            vertx.eventBus().<String>consumer(
+                    RENDER_NGFF_THUMBNAIL, event -> {
+                        renderNgffThumbnail(event);
                     });
         } catch (Exception e) {
             startPromise.fail(e);
@@ -250,6 +257,79 @@ public class ImageRegionVerticle extends OmeroMsAbstractVerticle {
             throw new RuntimeException(e);
         } finally {
             span.finish();
+        }
+    }
+
+    /**
+     * Render Ngff Thumbnail event handler. Responds with a
+     * request body on success based on the <code>format</code>
+     * <code>imageId</code>, <code>z</code> and <code>t</code> encoded in the
+     * URL or HTTP 404 if the {@link Image} does not exist or the user
+     * does not have permissions to access it.
+     * @param event Current routing context.
+     * @param message JSON encoded {@link ImageRegionCtx} object.
+     */
+    private void renderNgffThumbnail(Message<String> message) {
+        ObjectMapper mapper = new ObjectMapper();
+        ThumbnailCtx thumbnailCtx;
+        try {
+            String body = message.body();
+            thumbnailCtx = mapper.readValue(body, ThumbnailCtx.class);
+        } catch (Exception e) {
+            String v = "Illegal image region context";
+            log.error(v + ": {}", message.body(), e);
+            message.fail(400, v);
+            return;
+        }
+        TraceContext traceCtx = extractor().extract(
+                thumbnailCtx.traceContext).context();
+        ScopedSpan span = Tracing.currentTracer().startScopedSpanWithParent(
+                "handle_render_image_region",
+                traceCtx);
+        span.tag("ctx", message.body());
+
+        try (OmeroRequest request = new OmeroRequest(
+                 host, port, thumbnailCtx.omeroSessionKey))
+        {
+            if (families == null) {
+                request.execute(this::updateFamilies);
+            }
+            if (renderingModels == null) {
+                request.execute(this::updateRenderingModels);
+            }
+            byte[] imageRegion = request.execute(
+                    new ImageRegionRequestHandler(
+                            thumbnailCtx,
+                            families,
+                            renderingModels,
+                            lutProvider,
+                            pixelsService,
+                            compressionService,
+                            maxTileLength,
+                            config().getJsonObject("omero.server").getString("omero.ngff.dir"))::renderNgffThumbnail);
+            span.finish();
+            if (imageRegion == null) {
+                message.fail(
+                        404, "Cannot find Image:" + thumbnailCtx.imageId);
+            } else {
+                message.reply(imageRegion);
+            }
+        } catch (PermissionDeniedException
+                | CannotCreateSessionException e) {
+            String v = "Permission denied";
+            log.debug(v);
+            span.error(e);
+            message.fail(403, v);
+        } catch (IllegalArgumentException e) {
+            log.debug(
+                "Illegal argument received while retrieving ngff thumbnail", e);
+            span.error(e);
+            message.fail(400, e.getMessage());
+        } catch (Exception e) {
+            String v = "Exception while retrieving ngff thumbnail";
+            log.error(v, e);
+            span.error(e);
+            message.fail(500, v);
         }
     }
 }

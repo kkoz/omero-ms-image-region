@@ -100,7 +100,10 @@ public class ImageRegionRequestHandler {
     private final IceMapper mapper = new IceMapper();
 
     /** Image Region Context */
-    private final ImageRegionCtx imageRegionCtx;
+    private ImageRegionCtx imageRegionCtx = null;
+
+    /** Thumbnail Context */
+    private ThumbnailCtx thumbnailCtx = null;
 
     /** Renderer */
     private Renderer renderer;
@@ -131,6 +134,31 @@ public class ImageRegionRequestHandler {
             String ngffDir) {
         log.info("Setting up handler");
         this.imageRegionCtx = imageRegionCtx;
+        this.families = families;
+        this.renderingModels = renderingModels;
+        this.lutProvider = lutProvider;
+        this.maxTileLength = maxTileLength;
+        this.ngffDir = ngffDir;
+
+        pixelsService = pixService;
+        projectionService = new ProjectionService();
+        compressionSrv = compSrv;
+    }
+
+    /**
+     * Default constructor.
+     * @param imageRegionCtx {@link ImageRegionCtx} object
+     */
+    public ImageRegionRequestHandler(
+            ThumbnailCtx thumbnailCtx,
+            List<Family> families, List<RenderingModel> renderingModels,
+            LutProvider lutProvider,
+            PixelsService pixService,
+            LocalCompress compSrv,
+            int maxTileLength,
+            String ngffDir) {
+        log.info("Setting up handler");
+        this.thumbnailCtx = thumbnailCtx;
         this.families = families;
         this.renderingModels = renderingModels;
         this.lutProvider = lutProvider;
@@ -778,5 +806,224 @@ public class ImageRegionRequestHandler {
             g.dispose();
         }
         return toReturn;
+    }
+
+    /***** THUMBNAIL ******/
+    /**
+     * Render Image region request handler.
+     * @param client OMERO client to use for querying.
+     * @return A response body in accordance with the initial settings
+     * provided by <code>imageRegionCtx</code>.
+     */
+    public byte[] renderNgffThumbnail(omero.client client) {
+        ScopedSpan span =
+                Tracing.currentTracer().startScopedSpan("render_image_region");
+        try {
+            ServiceFactoryPrx sf = client.getSession();
+            IQueryPrx iQuery = sf.getQueryService();
+            IPixelsPrx iPixels = sf.getPixelsService();
+            List<RType> pixelsIdAndSeries = getPixelsIdAndSeries(
+                    iQuery, thumbnailCtx.imageId);
+            if (pixelsIdAndSeries != null && pixelsIdAndSeries.size() == 2) {
+                return getThumbnailRegion(iQuery, iPixels, pixelsIdAndSeries);
+            }
+            log.debug("Cannot find Image:{}", thumbnailCtx.imageId);
+        } catch (Exception e) {
+            span.error(e);
+            log.error("Exception while retrieving image region", e);
+        } finally {
+            span.finish();
+        }
+        return null;
+    }
+
+    /**
+     * Retrieves a single region from the server in the requested format as
+     * defined by <code>imageRegionCtx.format</code>.
+     * @param iQuery OMERO query service to use for metadata access.
+     * @param iPixels OMERO pixels service to use for metadata access.
+     * @param pixelsAndSeries {@link Pixels} identifier and Bio-Formats series
+     * to retrieve image region for.
+     * @return Image region as a byte array.
+     * @throws QuantizationException
+     */
+    private byte[] getThumbnailRegion(
+            IQueryPrx iQuery, IPixelsPrx iPixels, List<RType> pixelsIdAndSeries)
+                    throws IllegalArgumentException, ServerError, IOException,
+                    QuantizationException {
+        log.debug("Getting image region");
+        Map<String, String> ctx = new HashMap<String, String>();
+        ctx.put("omero.group", "-1");
+        ScopedSpan span = Tracing.currentTracer()
+                .startScopedSpan("retrieve_pix_description");
+        Pixels pixels;
+        try {
+            long pixelsId =
+                    ((omero.RLong) pixelsIdAndSeries.get(0)).getValue();
+            span.tag("omero.pixels_id", Long.toString(pixelsId));
+            pixels = (Pixels) mapper.reverse(
+                    iPixels.retrievePixDescription(pixelsId, ctx));
+            // The series will be used by our version of PixelsService which
+            // avoids attempting to retrieve the series from the database
+            // via IQuery later.
+            Image image = new Image(pixels.getImage().getId(), true);
+            image.setFileset(new Fileset(getFilesetIdFromImageId(iQuery, pixels.getImage().getId()), true));
+            image.setSeries(((omero.RInt) pixelsIdAndSeries.get(1)).getValue());
+            pixels.setImage(image);
+        } finally {
+            span.finish();
+        }
+        QuantumFactory quantumFactory = new QuantumFactory(families);
+        try (PixelBuffer pixelBuffer = getPixelBuffer(pixels)) {
+            renderer = new Renderer(
+                quantumFactory, renderingModels,
+                pixels, getRenderingDef(iPixels, pixels.getId()),
+                pixelBuffer, lutProvider
+            );
+            PlaneDef planeDef = new PlaneDef(PlaneDef.XY, 0); //t = 0
+            planeDef.setZ(0);
+
+            // Avoid asking for resolution descriptions if there is no image
+            // pyramid.  This can be *very* expensive.
+            int countResolutionLevels = pixelBuffer.getResolutionLevels();
+            List<List<Integer>> resolutionLevels;
+            if (countResolutionLevels > 1) {
+                resolutionLevels = pixelBuffer.getResolutionDescriptions();
+            } else {
+                resolutionLevels = new ArrayList<List<Integer>>();
+                resolutionLevels.add(
+                        Arrays.asList(pixels.getSizeX(), pixels.getSizeY()));
+            }
+            planeDef.setRegion(getWholeRegionDef(resolutionLevels, pixelBuffer));
+            //updateSettingsThumbnail(renderer);
+            span = Tracing.currentTracer().startScopedSpan("render");
+            span.tag("omero.pixels_id", pixels.getId().toString());
+            try {
+                // The actual act of rendering will close the provided pixel
+                // buffer.  However, just in case an exception is thrown before
+                // reaching this point a double close may occur due to the
+                // surrounding try-with-resources block.
+                return renderNgffThumbnail(renderer, resolutionLevels, pixels, planeDef);
+            } finally {
+                span.finish();
+            }
+        }
+    }
+
+    /**
+     * Performs conditional rendering in the requested format as defined by
+     * <code>imageRegionCtx.format</code>.
+     * @param renderer fully initialized renderer
+     * @param resolutionLevels complete definition of all resolution levels
+     * for the image.
+     * @param pixels pixels metadata
+     * @param planeDef plane definition to use for rendering
+     * @return Image region as a byte array.
+     * @throws ServerError
+     * @throws IOException
+     * @throws QuantizationException
+     */
+    private byte[] renderNgffThumbnail(
+            Renderer renderer, List<List<Integer>> resolutionLevels,
+            Pixels pixels, PlaneDef planeDef)
+                    throws ServerError, IOException, QuantizationException {
+        //checkPlaneDef(resolutionLevels, planeDef);
+
+        Tracer tracer = Tracing.currentTracer();
+        ScopedSpan span1 = tracer.startScopedSpan("render_as_packed_int");
+        span1.tag("omero.pixels_id", pixels.getId().toString());
+        int[] buf;
+        try {
+            buf =  renderer.renderAsPackedInt(planeDef, null);
+        } finally {
+            span1.tag("omero.rendering_stats", renderer.getStats().getStats());
+            span1.finish();
+        }
+
+        RegionDef region = planeDef.getRegion();
+        int sizeX = region != null? region.getWidth() : pixels.getSizeX();
+        int sizeY = region != null? region.getHeight() : pixels.getSizeY();
+        BufferedImage image = ImageUtil.createBufferedImage(
+            buf, sizeX, sizeY
+        );
+        if (thumbnailCtx.longestSide != null) {
+            int longestSide = thumbnailCtx.longestSide;
+            float scale = sizeX >= sizeY ? (float) longestSide/sizeX : (float) longestSide/sizeY;
+            image = scaleBufferedImage(image, scale, scale);
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        compressionSrv.compressToStream(image, output);
+        return output.toByteArray();
+    }
+
+    /**
+     * Returns RegionDef to read based on tile / region provided in
+     * ImageRegionCtx.
+     * @param resolutionLevels complete definition of all resolution levels
+     * @param pixelBuffer raw pixel data access buffer
+     * @return RegionDef {@link RegionDef} describing image region to read
+     * @throws IllegalArgumentException
+     * @throws ServerError
+     */
+    protected RegionDef getWholeRegionDef(
+            List<List<Integer>> resolutionLevels, PixelBuffer pixelBuffer)
+                    throws IllegalArgumentException, ServerError {
+        log.debug("Setting region to read");
+        int resolution = 0;
+        int sizeX = resolutionLevels.get(resolution).get(0);
+        int sizeY = resolutionLevels.get(resolution).get(1);
+        RegionDef regionDef = new RegionDef();
+        regionDef.setX(0);
+        regionDef.setY(0);
+        regionDef.setWidth(sizeX);
+        regionDef.setHeight(sizeY);
+        return regionDef;
+    }
+
+    /**
+     * Update settings on the rendering engine based on the current context.
+     * @param renderer fully initialized renderer
+     * @param sizeC number of channels
+     * @param ctx OMERO context (group)
+     * @throws ServerError
+     */
+    private void updateSettingsThumbnail(Renderer renderer) throws ServerError {
+        log.debug("Setting active channels");
+        int idx = 0; // index of windows/colors args
+        for (int c = 0; c < renderer.getMetadata().getSizeC(); c++) {
+            /*
+            log.debug("Setting for channel {}", c);
+            boolean isActive = imageRegionCtx.channels.contains(c + 1);
+            log.debug("\tChannel active {}", isActive);
+            renderer.setActive(c, isActive);
+            */
+            renderer.setActive(c, true);
+
+            if (thumbnailCtx.windows != null) {
+                double min = (double) thumbnailCtx.windows.get(idx)[0];
+                double max = (double) thumbnailCtx.windows.get(idx)[1];
+                log.debug("\tMin-Max: [{}, {}]", min, max);
+                renderer.setChannelWindow(c, min, max);
+            }
+            if (thumbnailCtx.colors != null) {
+                String color = thumbnailCtx.colors.get(idx);
+                if (color.endsWith(".lut")) {
+                    renderer.setChannelLookupTable(c, color);
+                    log.debug("\tLUT: {}", color);
+                } else {
+                    int[] rgba = splitHTMLColor(color);
+                    renderer.setRGBA(c, rgba[0], rgba[1],rgba[2], rgba[3]);
+                    log.debug("\tColor: [{}, {}, {}, {}]",
+                              rgba[0], rgba[1], rgba[2], rgba[3]);
+                }
+            }
+            idx += 1;
+        }
+        for (RenderingModel renderingModel : renderingModels) {
+            if ("rgb".equals(renderingModel.getValue())) {
+                renderer.setModel(renderingModel);
+                break;
+            }
+        }
     }
 }
