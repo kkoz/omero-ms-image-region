@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Optional;
 
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +36,8 @@ import ome.io.nio.FilePathResolver;
 import ome.io.nio.PixelBuffer;
 import ome.io.nio.TileSizes;
 import ome.model.core.Pixels;
+import omero.model.WellSample;
+import omero.model.WellSampleI;
 /**
  * Subclass which overrides series retrieval to avoid the need for
  * an injected {@link IQuery}.
@@ -100,14 +103,16 @@ public class PixelsService extends ome.io.nio.PixelsService {
      * @return A pixel buffer instance.
      * @since OMERO-Beta4.3
      */
-    public PixelBuffer getZarrPixelBuffer(Pixels pixels, String ngffDir, OmeroZarrUtils zarrUtils) {
-        log.info("Creating ZarrPixelBuffer");
-        return new ZarrPixelBuffer(pixels, ngffDir, pixels.getImage().getFileset().getId(), zarrUtils);
+    public PixelBuffer getZarrPixelBuffer(Pixels pixels, String ngffDir, OmeroZarrUtils zarrUtils,
+            Optional<WellSampleI> opWellSample) {
+        return new ZarrPixelBuffer(pixels, ngffDir, pixels.getImage().getFileset().getId(), zarrUtils, opWellSample);
     }
 
-    public PixelBuffer getNgffPixelBuffer(Pixels pixels, String ngffDir, TiledbUtils tiledbUtils, OmeroZarrUtils zarrUtils) {
+    public PixelBuffer getNgffPixelBuffer(Pixels pixels, String ngffDir, TiledbUtils tiledbUtils, OmeroZarrUtils zarrUtils,
+            Optional<WellSampleI> opWellSample) {
         try {
-            return new ZarrPixelBuffer(pixels, ngffDir, pixels.getImage().getFileset().getId(), zarrUtils);
+            return new ZarrPixelBuffer(pixels, ngffDir, pixels.getImage().getFileset().getId(), zarrUtils,
+                    opWellSample);
         } catch (Exception e) {
             return new TiledbPixelBuffer(pixels, ngffDir, pixels.getImage().getFileset().getId(), tiledbUtils);
         }

@@ -340,6 +340,8 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                 "/webclient/render_image/:imageId/:theZ/:theT*")
             .handler(this::renderImageRegion);
 
+        router.get("/queryTest").handler(this::queryTest);
+
         // ShapeMask request handlers
         router.get(
                 "/webgateway/render_shape_mask/:shapeId*")
@@ -542,6 +544,32 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                     response.headers().set("Cache-Control", cacheControlHeader);
                 }
                 response.write(Buffer.buffer(imageRegion));
+            } finally {
+                if (!response.closed()) {
+                    response.end();
+                }
+                log.debug("Response ended");
+            }
+        });
+    }
+
+    private void queryTest(RoutingContext event) {
+        log.info("Query Test");
+        HttpServerRequest request = event.request();
+        request.params().add("shapeId", "1");
+        ShapeMaskCtx shapeMaskCtx = new ShapeMaskCtx(
+                request.params(), event.get("omero.session_key"));
+        shapeMaskCtx.injectCurrentTraceContext();
+
+        final HttpServerResponse response = event.response();
+        vertx.eventBus().<byte[]>request(
+                ShapeMaskVerticle.TEST_QUERY_EVENT,
+                Json.encode(shapeMaskCtx), result -> {
+            try {
+                if (handleResultFailed(result, response)) {
+                    return;
+                }
+                response.setStatusCode(200);
             } finally {
                 if (!response.closed()) {
                     response.end();

@@ -48,6 +48,9 @@ public class ShapeMaskVerticle extends OmeroMsAbstractVerticle {
     public static final String GET_LABEL_IMAGE_METADATA_EVENT =
             "omero.get_label_image_metadata";
 
+    public static final String TEST_QUERY_EVENT =
+            "omero.test_query";
+
     /** OMERO server host */
     private String host;
 
@@ -98,11 +101,55 @@ public class ShapeMaskVerticle extends OmeroMsAbstractVerticle {
                     GET_LABEL_IMAGE_METADATA_EVENT, event -> {
                         getLabelImageMetadata(event);
                     });
+            vertx.eventBus().<String>consumer(
+                    TEST_QUERY_EVENT, event -> {
+                        testQuery(event);
+                    });
         } catch (Exception e) {
             startPromise.fail(e);
         }
         startPromise.complete();
     }
+
+    private void testQuery(Message<String> message) {
+        ObjectMapper mapper = new ObjectMapper();
+        ShapeMaskCtx shapeMaskCtx;
+        ScopedSpan span;
+        try {
+            String body = message.body();
+            shapeMaskCtx = mapper.readValue(body, ShapeMaskCtx.class);
+            span = Tracing.currentTracer().startScopedSpanWithParent(
+                    "test_query",
+                    extractor().extract(shapeMaskCtx.traceContext).context());
+            span.tag("ctx", body);
+        } catch (Exception e) {
+            String v = "Illegal shape mask context";
+            log.error(v + ": {}", message.body(), e);
+            message.fail(400, v);
+            return;
+        }
+        span.tag("ctx", message.body());
+        try (OmeroRequest request = new OmeroRequest(
+                host, port, shapeMaskCtx.omeroSessionKey))
+       {
+           byte[] dummy = request.execute(
+                   new ShapeMaskRequestHandler(shapeMaskCtx, host, tiledbUtils, zarrUtils)::testQuery);
+           span.finish();
+           message.reply(dummy);
+       } catch (PermissionDeniedException
+               | CannotCreateSessionException e) {
+           String v = "Permission denied";
+           log.debug(v);
+           span.error(e);
+           message.fail(403, v);
+       } catch (Exception e) {
+           String v = "Exception while retrieving image region";
+           log.error(v, e);
+           span.error(e);
+           message.fail(500, v);
+       }
+    }
+
 
     /**
      * Render shape mask event handler. Responds with a

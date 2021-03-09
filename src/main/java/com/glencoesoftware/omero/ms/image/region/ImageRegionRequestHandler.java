@@ -52,10 +52,8 @@ import ome.io.nio.PixelBuffer;
 import ome.model.core.Image;
 import ome.model.core.Pixels;
 import ome.model.display.ChannelBinding;
-import ome.model.display.RenderingDef;
 import ome.model.enums.Family;
 import ome.model.enums.RenderingModel;
-import ome.model.fs.Fileset;
 import ome.util.ImageUtil;
 import omeis.providers.re.Renderer;
 import omeis.providers.re.codomain.ReverseIntensityContext;
@@ -69,6 +67,8 @@ import omero.ServerError;
 import omero.api.IPixelsPrx;
 import omero.api.IQueryPrx;
 import omero.api.ServiceFactoryPrx;
+import omero.model.IObject;
+import omero.model.WellSampleI;
 import omero.sys.ParametersI;
 import omero.util.IceMapper;
 
@@ -181,8 +181,9 @@ public class ImageRegionRequestHandler {
         ScopedSpan span = Tracing.currentTracer()
                 .startScopedSpan("retrieve_pix_description");
         Pixels pixels = RenderingUtils.retrievePixDescription(pixelsIdAndSeries, mapper, iPixels, iQuery);
+        Optional<WellSampleI> opWellSample = renderingUtils.getWellSample(iQuery);
         QuantumFactory quantumFactory = new QuantumFactory(families);
-        try (PixelBuffer pixelBuffer = renderingUtils.getPixelBuffer(pixels)) {
+        try (PixelBuffer pixelBuffer = renderingUtils.getPixelBuffer(pixels, opWellSample)) {
             log.info(pixelBuffer.toString());
             renderer = new Renderer(
                 quantumFactory, renderingModels,
@@ -218,7 +219,7 @@ public class ImageRegionRequestHandler {
                 // buffer.  However, just in case an exception is thrown before
                 // reaching this point a double close may occur due to the
                 // surrounding try-with-resources block.
-                return render(renderer, sizeX, sizeY, pixels, planeDef);
+                return render(renderer, sizeX, sizeY, pixels, planeDef, opWellSample);
             } finally {
                 span.finish();
             }
@@ -240,7 +241,7 @@ public class ImageRegionRequestHandler {
      */
     private byte[] render(
             Renderer renderer, Integer sizeX, Integer sizeY,
-            Pixels pixels, PlaneDef planeDef)
+            Pixels pixels, PlaneDef planeDef, Optional<WellSampleI> opWellSample)
                     throws ServerError, IOException, QuantizationException {
         RenderingUtils.checkPlaneDef(sizeX, sizeY, planeDef);
 
@@ -255,7 +256,7 @@ public class ImageRegionRequestHandler {
                 int projectedSizeC = 0;
                 ChannelBinding[] channelBindings =
                         renderer.getChannelBindings();
-                PixelBuffer pixelBuffer = renderingUtils.getPixelBuffer(pixels);
+                PixelBuffer pixelBuffer = renderingUtils.getPixelBuffer(pixels, opWellSample);
                 int start = Optional
                         .ofNullable(imageRegionCtx.projectionStart)
                         .orElse(0);

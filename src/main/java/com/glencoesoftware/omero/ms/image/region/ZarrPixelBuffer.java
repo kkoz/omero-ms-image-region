@@ -7,11 +7,14 @@ import java.nio.ByteBuffer;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import ome.io.nio.DimensionsOutOfBoundsException;
 import ome.io.nio.PixelBuffer;
 import ome.model.core.Pixels;
 import ome.util.PixelData;
+import omero.model.WellSample;
+import omero.model.WellSampleI;
 
 public class ZarrPixelBuffer implements PixelBuffer {
 
@@ -33,6 +36,9 @@ public class ZarrPixelBuffer implements PixelBuffer {
     /** For performing zarr operations */
     OmeroZarrUtils zarrUtils;
 
+    /** Optional WellSample if image is part of a plate */
+    Optional<WellSampleI> opWellSample;
+
     /**
      * Default constructor
      * @param pixels The Pixels object represented by this PixelBuffer
@@ -40,11 +46,13 @@ public class ZarrPixelBuffer implements PixelBuffer {
      * @param filesetId Fileset ID
      * @param zarrUtils For performing zarr operations
      */
-    public ZarrPixelBuffer(Pixels pixels, String ngffDir, Long filesetId, OmeroZarrUtils zarrUtils) {
+    public ZarrPixelBuffer(Pixels pixels, String ngffDir, Long filesetId, OmeroZarrUtils zarrUtils,
+            Optional<WellSampleI> opWellSample) {
         this.pixels = pixels;
         this.ngffDir = ngffDir;
         this.filesetId = filesetId;
         this.zarrUtils = zarrUtils;
+        this.opWellSample = opWellSample;
         this.resolutionLevels = this.getResolutionLevels();
         this.resolutionLevel = this.resolutionLevels - 1;
         if (this.resolutionLevel < 0) {
@@ -164,7 +172,7 @@ public class ZarrPixelBuffer implements PixelBuffer {
             .append(y).append(":").append(y + h).append(",")
             .append(x).append(":").append(x + w).append("]");
         return zarrUtils.getPixelData(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel,
-                domStrBuf.toString());
+                domStrBuf.toString(), opWellSample);
     }
 
     @Override
@@ -366,27 +374,32 @@ public class ZarrPixelBuffer implements PixelBuffer {
 
     @Override
     public int getSizeX() {
-        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 4);
+        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 4,
+                opWellSample);
     }
 
     @Override
     public int getSizeY() {
-        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 3);
+        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 3,
+                opWellSample);
     }
 
     @Override
     public int getSizeZ() {
-        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 2);
+        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 2,
+                opWellSample);
     }
 
     @Override
     public int getSizeC() {
-        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 1);
+        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 1,
+                opWellSample);
     }
 
     @Override
     public int getSizeT() {
-        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 0);
+        return zarrUtils.getDimSize(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel, 0,
+                opWellSample);
     }
 
     @Override
@@ -422,7 +435,8 @@ public class ZarrPixelBuffer implements PixelBuffer {
         for(int i = 0; i < resolutionLevels; i++) {
             this.resolutionLevel = i;
             List<Integer> description = new ArrayList<Integer>();
-            Integer[] xy = zarrUtils.getSizeXandY(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel);
+            Integer[] xy = zarrUtils.getSizeXandY(ngffDir, filesetId, pixels.getImage().getSeries(), resolutionLevel,
+                    opWellSample);
             description.add(xy[0]);
             description.add(xy[1]);
             resolutionDescriptions.add(description);

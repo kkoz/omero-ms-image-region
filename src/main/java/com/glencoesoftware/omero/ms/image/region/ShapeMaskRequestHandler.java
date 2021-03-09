@@ -29,6 +29,7 @@ import java.awt.image.WritableRaster;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,8 +47,11 @@ import ome.xml.model.primitives.Color;
 import omero.RType;
 import omero.ServerError;
 import omero.api.IQueryPrx;
+import omero.api.ServiceFactoryPrx;
+import omero.model.IObject;
 import omero.model.Image;
 import omero.model.MaskI;
+import omero.model.WellSampleI;
 import omero.sys.ParametersI;
 
 public class ShapeMaskRequestHandler {
@@ -74,6 +78,42 @@ public class ShapeMaskRequestHandler {
         this.shapeMaskCtx = shapeMaskCtx;
         this.ngffDir = ngffDir;
         this.ngffUtils = new NgffUtils(tiledbUtils, zarrUtils);
+    }
+
+
+
+    public byte[] testQuery(omero.client client) {
+        ScopedSpan span =
+                Tracing.currentTracer().startScopedSpan("test_query");
+        try {
+            ServiceFactoryPrx sf = client.getSession();
+            IQueryPrx iQuery = sf.getQueryService();
+            Map<String, String> ctx = new HashMap<String, String>();
+            ctx.put("omero.group", "-1");
+            ParametersI params = new ParametersI();
+            List<Long> ids = new ArrayList<Long>();
+            //ids.add(651l);
+            ids.add(508l);
+            params.addIds(ids);
+            List<IObject> wellSamples = iQuery.findAllByQuery(
+                    "SELECT ws FROM WellSample AS ws" +
+                    "  RIGHT OUTER JOIN FETCH ws.image AS i" +
+                    "  LEFT OUTER JOIN FETCH ws.well AS w" +
+                    "  LEFT OUTER JOIN FETCH w.plate AS p" +
+                    "  WHERE i.id IN :ids",
+                    params, ctx
+                );
+            for (IObject ob : wellSamples) {
+                WellSampleI ws = (WellSampleI) ob;
+                log.info(Long.toString(ws.getWell().getPlate().getId().getValue()));
+            }
+        } catch (Exception e) {
+            span.error(e);
+            log.error("Exception while retrieving image region", e);
+        } finally {
+            span.finish();
+        }
+        return null;
     }
 
     /**
@@ -335,7 +375,10 @@ public class ShapeMaskRequestHandler {
                     throw new IllegalArgumentException("Failed to supply domain parameter to getShapeMaskBytes");
                 }
                 try {
-                    return ngffUtils.getLabelImageBytes(ngffDir, filesetId, series, uuid, resolution, shapeMaskCtx.subarrayDomainStr);
+                    IQueryPrx iQuery = client.getSession().getQueryService();
+                    Optional<WellSampleI> opWellSample = RenderingUtils.getWellSample(iQuery);
+                    return ngffUtils.getLabelImageBytes(ngffDir, filesetId, series, uuid, resolution,
+                            shapeMaskCtx.subarrayDomainStr, opWellSample);
                 } catch (Exception e) {
                     log.error("Error getting label image bytes from NGFF", e);
                     return mask.getBytes();

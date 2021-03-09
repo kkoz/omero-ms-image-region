@@ -1,9 +1,11 @@
 package com.glencoesoftware.omero.ms.image.region;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +27,10 @@ import omero.RType;
 import omero.ServerError;
 import omero.api.IPixelsPrx;
 import omero.api.IQueryPrx;
+import omero.api.ServiceFactoryPrx;
+import omero.model.IObject;
+import omero.model.WellSample;
+import omero.model.WellSampleI;
 import omero.sys.ParametersI;
 import omero.util.IceMapper;
 
@@ -53,14 +59,15 @@ public class RenderingUtils {
             LoggerFactory.getLogger(RenderingUtils.class);
 
     public static PixelBuffer getPixelBuffer(PixelsService pixelsService, Pixels pixels,
-            String ngffDir, TiledbUtils tiledbUtils, OmeroZarrUtils zarrUtils) {
+            String ngffDir, TiledbUtils tiledbUtils, OmeroZarrUtils zarrUtils, Optional<WellSampleI> opWellSample) {
         ScopedSpan span = Tracing.currentTracer()
                 .startScopedSpan("get_pixel_buffer");
         span.tag("omero.pixels_id", pixels.getId().toString());
         PixelBuffer pb = null;
         try {
             try {
-                pb = pixelsService.getNgffPixelBuffer(pixels, ngffDir, tiledbUtils, zarrUtils);
+                pb = pixelsService.getNgffPixelBuffer(pixels, ngffDir, tiledbUtils, zarrUtils,
+                            opWellSample);
             } catch(Exception e) {
                 log.error("Error when getting TieldbPixelBuffer", e);
                 log.info("Getting TiledbPixelBuffer failed - attempting to get local data");
@@ -157,14 +164,47 @@ public class RenderingUtils {
     }
 
 
-    public PixelBuffer getPixelBuffer(Pixels pixels) {
+    public static Optional<WellSampleI> getWellSample(IQueryPrx iQuery) {
+        ScopedSpan span =
+                Tracing.currentTracer().startScopedSpan("get_wellsample");
+        try {
+            Map<String, String> ctx = new HashMap<String, String>();
+            ctx.put("omero.group", "-1");
+            ParametersI params = new ParametersI();
+            List<Long> ids = new ArrayList<Long>();
+            //ids.add(651l);
+            ids.add(508l);
+            params.addIds(ids);
+            List<IObject> wellSamples = iQuery.findAllByQuery(
+                    "SELECT ws FROM WellSample AS ws" +
+                    "  RIGHT OUTER JOIN FETCH ws.image AS i" +
+                    "  LEFT OUTER JOIN FETCH ws.well AS w" +
+                    "  LEFT OUTER JOIN FETCH w.plate AS p" +
+                    "  WHERE i.id IN :ids",
+                    params, ctx
+                );
+            for (IObject ob : wellSamples) {
+                WellSampleI ws = (WellSampleI) ob;
+                return Optional.of(ws);
+            }
+        } catch (Exception e) {
+            span.error(e);
+            log.error("Exception while retrieving image region", e);
+        } finally {
+            span.finish();
+        }
+        return Optional.empty();
+    }
+
+
+    public PixelBuffer getPixelBuffer(Pixels pixels, Optional<WellSampleI> opWellSample) {
         ScopedSpan span = Tracing.currentTracer()
                 .startScopedSpan("get_pixel_buffer");
         span.tag("omero.pixels_id", pixels.getId().toString());
         PixelBuffer pb = null;
         try {
             try {
-                pb = pixelsService.getNgffPixelBuffer(pixels, ngffDir, tiledbUtils, zarrUtils);
+                pb = pixelsService.getNgffPixelBuffer(pixels, ngffDir, tiledbUtils, zarrUtils, opWellSample);
             } catch(Exception e) {
                 log.error("Error when getting TieldbPixelBuffer", e);
                 log.info("Getting TiledbPixelBuffer failed - attempting to get local data");

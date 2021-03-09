@@ -61,6 +61,7 @@ public class ImageRegionVerticle extends OmeroMsAbstractVerticle {
     public static final String RENDER_IMAGE_REGION_EVENT =
             "omero.render_image_region";
 
+
     /** OMERO server host */
     private String host;
 
