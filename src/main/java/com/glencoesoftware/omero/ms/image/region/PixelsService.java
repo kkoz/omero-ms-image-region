@@ -19,6 +19,7 @@
 package com.glencoesoftware.omero.ms.image.region;
 
 import java.io.File;
+import java.util.Optional;
 
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +29,7 @@ import ome.io.nio.FilePathResolver;
 import ome.io.nio.PixelBuffer;
 import ome.io.nio.TileSizes;
 import ome.model.core.Pixels;
+import omero.model.WellSampleI;
 /**
  * Subclass which overrides series retrieval to avoid the need for
  * an injected {@link IQuery}.
@@ -80,10 +82,11 @@ public class PixelsService extends ome.io.nio.PixelsService {
      * @return A pixel buffer instance.
      */
     public PixelBuffer getZarrPixelBuffer(
-            Pixels pixels, String ngffDir, OmeroZarrUtils zarrUtils) {
+            Pixels pixels, String ngffDir, OmeroZarrUtils zarrUtils,
+            Optional<WellSampleI> opWellSample) {
         log.info("Creating ZarrPixelBuffer");
         return new ZarrPixelBuffer(
-            pixels, ngffDir, pixels.getImage().getFileset().getId(), zarrUtils);
+            pixels, ngffDir, pixels.getImage().getFileset().getId(), zarrUtils, opWellSample);
     }
 
     /**
@@ -96,10 +99,10 @@ public class PixelsService extends ome.io.nio.PixelsService {
      */
     public PixelBuffer getNgffPixelBuffer(
             Pixels pixels, String ngffDir,
-            OmeroZarrUtils zarrUtils) {
+            OmeroZarrUtils zarrUtils, Optional<WellSampleI> opWellSample) {
             return new ZarrPixelBuffer(
                 pixels, ngffDir, pixels.getImage().getFileset().getId(),
-                zarrUtils);
+                zarrUtils, opWellSample);
     }
 }
 

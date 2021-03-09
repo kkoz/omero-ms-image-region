@@ -21,11 +21,13 @@ package com.glencoesoftware.omero.ms.image.region;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 
 import org.slf4j.LoggerFactory;
 
 import io.tiledb.java.api.TileDBError;
 import io.vertx.core.json.JsonObject;
+import omero.model.WellSampleI;
 
 public class NgffUtils {
 
@@ -61,7 +63,7 @@ public class NgffUtils {
      */
     public byte[] getLabelImageBytes(
         String ngffDir, long filesetId, int series, String uuid,
-        Integer resolution, String domainStr)
+        Integer resolution, String domainStr, Optional<WellSampleI> opWellSample)
                 throws TileDBError {
         Path basePath;
         try {
@@ -73,7 +75,8 @@ public class NgffUtils {
         Path ngffRoot = basePath.resolve(Long.toString(filesetId) + ZARR_EXTN);
         if (Files.exists(ngffRoot) ) {
             return zarrUtils.getLabelImageBytes(
-                    ngffDir, filesetId, series, uuid, resolution, domainStr);
+                    ngffDir, filesetId, series, uuid, resolution, domainStr,
+                    opWellSample);
         }
         log.error(
             "Ngff file missing or unsupported type: {} {}", ngffDir, filesetId);

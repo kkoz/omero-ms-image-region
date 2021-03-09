@@ -4,7 +4,11 @@ plugins {
 }
 
 group = 'com.glencoesoftware.omero'
+<<<<<<< HEAD
 version = '0.5.4-SNAPSHOT-32'
+=======
+version = '0.5.4-SNAPSHOT-31'
+>>>>>>> Initial plate work
 
 mainClassName = 'com.glencoesoftware.omero.ms.image.region.OmeroVertxLauncher'
 

@@ -31,6 +31,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +48,9 @@ import loci.common.DataTools;
 import loci.formats.FormatTools;
 import ome.model.stats.StatsInfo;
 import ome.util.PixelData;
+import omero.model.Image;
+import omero.model.WellSample;
+import omero.model.WellSampleI;
 import ucar.ma2.InvalidRangeException;
 
 public class OmeroZarrUtils {
@@ -206,13 +210,27 @@ public class OmeroZarrUtils {
      */
     public Path getImageDataPath(
         String ngffDir, Long filesetId, Integer series,
-        Integer resolutionLevel)
+        Integer resolutionLevel, Optional<WellSampleI> opWellSample)
             throws IOException {
         Path imageDataPath = getLocalOrS3Path(ngffDir);
-        imageDataPath = imageDataPath
-                .resolve(Long.toString(filesetId) + ZARR_EXTN)
-                .resolve(Integer.toString(series))
-                .resolve(Integer.toString(resolutionLevel));
+        imageDataPath = imageDataPath.resolve(Long.toString(filesetId)
+                + ZARR_EXTN);
+        if (opWellSample.isPresent()) {
+            WellSample ws = opWellSample.get();
+            String columnNamingConvention = ws.getWell().getPlate()
+                    .getColumnNamingConvention().getValue();
+            String rowNamingConvention = ws.getWell().getPlate()
+                    .getRowNamingConvention().getValue();
+            int row = ws.getWell().getRow().getValue();
+            int col = ws.getWell().getColumn().getValue();
+            imageDataPath = imageDataPath.resolve(Integer.toString(row))
+                    .resolve(Integer.toString(col))
+                    .resolve(series.toString())
+                    .resolve(resolutionLevel.toString());
+        } else {
+            imageDataPath = imageDataPath.resolve(Integer.toString(series))
+                    .resolve(Integer.toString(resolutionLevel));
+        }
         return imageDataPath;
     }
 
@@ -228,11 +246,23 @@ public class OmeroZarrUtils {
      */
     private Path getLabelImagePath(
         String ngffDir, long filesetId, int series, String uuid,
-        Integer resolution)
+        Integer resolution, Optional<WellSampleI> opWellSample)
             throws IOException {
         Path labelImageBasePath = getLocalOrS3Path(ngffDir);
         labelImageBasePath = labelImageBasePath.resolve(Long.toString(filesetId)
-                + ZARR_EXTN).resolve(Integer.toString(series));
+                + ZARR_EXTN);
+        if (opWellSample.isPresent()) {
+            WellSample ws = opWellSample.get();
+            String namingConvention = ws.getPlateAcquisition().getPlate().getColumnNamingConvention().getValue();
+            int row = ws.getWell().getRow().getValue();
+            int col = ws.getWell().getColumn().getValue();
+            labelImageBasePath = labelImageBasePath.resolve(Integer.toString(row))
+                    .resolve(Integer.toString(col))
+                    .resolve(Integer.toString(series))
+                    .resolve(resolution.toString());
+        } else {
+            labelImageBasePath = labelImageBasePath.resolve(Integer.toString(series));
+        }
         Path labelImageLabelsPath = labelImageBasePath.resolve(LABELS);
         Path labelImageShapePath = labelImageLabelsPath.resolve(uuid);
         Path fullNgffDir = labelImageShapePath
@@ -253,12 +283,13 @@ public class OmeroZarrUtils {
      */
     public byte[] getLabelImageBytes(
             String ngffDir, long filesetId, int series, String uuid,
-            Integer resolution, String domainStr) {
+            Integer resolution, String domainStr,
+            Optional<WellSampleI> opWellSample) {
         ScopedSpan span = Tracing.currentTracer()
                 .startScopedSpan("get_label_image_bytes_zarr");
         try {
-            Path ngffPath = getLabelImagePath(
-                    ngffDir, filesetId, series, uuid, resolution);
+            Path ngffPath = getLabelImagePath(ngffDir, filesetId, series,
+                    uuid, resolution, opWellSample);
             ZarrArray zarray = ZarrArray.open(ngffPath);
             return OmeroZarrUtils.getData(zarray, domainStr, maxTileLength);
         } catch (IOException | InvalidRangeException e) {
@@ -282,13 +313,14 @@ public class OmeroZarrUtils {
      */
     public PixelData getPixelData(
         String ngffDir, Long filesetId, Integer series,
-        Integer resolutionLevel, String domainStr)
+        Integer resolutionLevel, String domainStr,
+        Optional<WellSampleI> opWellSample)
             throws IOException {
         ScopedSpan span = Tracing.currentTracer()
                 .startScopedSpan("get_pixel_data_from_zarr");
         try {
             Path ngffPath = getImageDataPath(
-                ngffDir, filesetId, series, resolutionLevel);
+                ngffDir, filesetId, series, resolutionLevel, opWellSample);
             ZarrArray array = ZarrArray.open(ngffPath);
             byte[] buffer = OmeroZarrUtils.getData(
                     array, domainStr, maxTileLength);
@@ -314,13 +346,14 @@ public class OmeroZarrUtils {
      * @throws IOException
      */
     public PixelData getPixelData(
-        String ngffDir, Long filesetId, Integer series, Integer resolutionLevel)
+        String ngffDir, Long filesetId, Integer series, Integer resolutionLevel,
+        Optional<WellSampleI> opWellSample)
             throws IOException {
         ScopedSpan span = Tracing.currentTracer()
                 .startScopedSpan("get_pixel_data_from_zarr");
         try {
             Path ngffPath = getImageDataPath(
-                ngffDir, filesetId, series, resolutionLevel);
+                ngffDir, filesetId, series, resolutionLevel, opWellSample);
             ZarrArray array = ZarrArray.open(ngffPath);
             byte[] buffer = OmeroZarrUtils.getData(array);
             PixelData d = new PixelData(
@@ -383,7 +416,7 @@ public class OmeroZarrUtils {
                     "Number of dimensions must be 5. Actual was: "
                     + Integer.toString(num_dims));
             }
-            log.debug(subarrayString);
+            log.info(subarrayString);
             int[][] shapeAndStart = getShapeAndStartFromString(subarrayString);
             if (shapeAndStart[0][3] > maxTileLength
                 || shapeAndStart[0][4] > maxTileLength) {
@@ -569,10 +602,11 @@ public class OmeroZarrUtils {
      */
     public int getDimSize(
             String ngffDir, Long filesetId, Integer series,
-            Integer resolutionLevel, Integer dimIdx) {
+            Integer resolutionLevel, Integer dimIdx,
+            Optional<WellSampleI> opWellSample) {
         ScopedSpan span = Tracing.currentTracer().startScopedSpan("get_dim_size_zarr");
         try {
-            Path imageDataPath = getImageDataPath(ngffDir, filesetId, series, resolutionLevel);
+            Path imageDataPath = getImageDataPath(ngffDir, filesetId, series, resolutionLevel, opWellSample);
             ZarrArray zarray = ZarrArray.open(imageDataPath);
             return zarray.getShape()[dimIdx];
         } catch (IOException e) {
@@ -593,13 +627,13 @@ public class OmeroZarrUtils {
      */
     public Integer[] getSizeXandY(
             String ngffDir, Long filesetId, Integer series,
-            Integer resolutionLevel) {
+            Integer resolutionLevel, Optional<WellSampleI> opWellSample) {
         ScopedSpan span = Tracing.currentTracer()
                 .startScopedSpan("get_size_xy_zarr");
         try {
             Integer[] xy = new Integer[2];
             ZarrArray zarray = ZarrArray.open(getImageDataPath(
-                    ngffDir, filesetId, series, resolutionLevel));
+                    ngffDir, filesetId, series, resolutionLevel, opWellSample));
             xy[0] = zarray.getShape()[4];
             xy[1] = zarray.getShape()[3];
             return xy;
@@ -753,13 +787,14 @@ public class OmeroZarrUtils {
      * @return List of Resolution level sizes
      */
     public List<List<Integer>> getResolutionDescriptions(
-            String ngffDir, long filesetId, int series) {
+            String ngffDir, long filesetId, int series,
+            Optional<WellSampleI> opWellSample) {
         List<List<Integer>> resolutionDescriptions =
                 new ArrayList<List<Integer>>();
         int resLvlCount = getResolutionLevels(ngffDir, filesetId, series);
         for(int i = 0; i < resLvlCount; i++) {
             List<Integer> description = new ArrayList<Integer>();
-            Integer[] xy = getSizeXandY(ngffDir, filesetId, series, i);
+            Integer[] xy = getSizeXandY(ngffDir, filesetId, series, i, opWellSample);
             description.add(xy[0]);
             description.add(xy[1]);
             resolutionDescriptions.add(description);

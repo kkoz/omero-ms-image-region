@@ -60,6 +60,7 @@ import omero.api.ServiceFactoryPrx;
 import omero.model.IObject;
 import omero.model.Image;
 import omero.model.RenderingDef;
+import omero.model.WellSampleI;
 import omero.model.ChannelBinding;
 import omero.sys.ParametersI;
 import omero.util.IceMapper;
@@ -276,8 +277,9 @@ public class ThumbnailsRequestHandler {
                 .startScopedSpan("retrieve_pix_description");
         Pixels pixels = RenderingUtils.retrievePixDescription(
                 pixelsIdAndSeries, mapper, iPixels, iQuery);
+        Optional<WellSampleI> opWellSample = RenderingUtils.getWellSample(iQuery, thumbnailCtx.imageId);
         QuantumFactory quantumFactory = new QuantumFactory(families);
-        try (PixelBuffer pixelBuffer = renderingUtils.getPixelBuffer(pixels)) {
+        try (PixelBuffer pixelBuffer = renderingUtils.getPixelBuffer(pixels, opWellSample)) {
             log.info(pixelBuffer.toString());
             renderer = new Renderer(
                 quantumFactory, renderingModels,
