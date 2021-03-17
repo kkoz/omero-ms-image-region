@@ -5,10 +5,14 @@ plugins {
 
 group = 'com.glencoesoftware.omero'
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = '0.5.4-SNAPSHOT-32'
 =======
 version = '0.5.4-SNAPSHOT-31'
 >>>>>>> Initial plate work
+=======
+version = '0.5.4-SNAPSHOT-32'
+>>>>>>> Flip bytes for little endian zarr data
 
 mainClassName = 'com.glencoesoftware.omero.ms.image.region.OmeroVertxLauncher'
 

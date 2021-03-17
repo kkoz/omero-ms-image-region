@@ -45,6 +45,7 @@ import brave.Tracing;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import loci.common.DataTools;
+import loci.formats.FormatException;
 import loci.formats.FormatTools;
 import ome.model.stats.StatsInfo;
 import ome.util.PixelData;
@@ -430,6 +431,7 @@ public class OmeroZarrUtils {
             span.finish();
         }
     }
+
 
     /**
      * Get byte array from ZarrArray

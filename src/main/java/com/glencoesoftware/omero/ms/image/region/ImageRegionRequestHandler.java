@@ -61,9 +61,7 @@ import omero.ServerError;
 import omero.api.IPixelsPrx;
 import omero.api.IQueryPrx;
 import omero.api.ServiceFactoryPrx;
-import omero.model.IObject;
 import omero.model.WellSampleI;
-import omero.sys.ParametersI;
 import omero.util.IceMapper;
 
 public class ImageRegionRequestHandler {
