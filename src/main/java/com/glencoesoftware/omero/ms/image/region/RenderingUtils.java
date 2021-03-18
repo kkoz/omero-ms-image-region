@@ -227,6 +227,7 @@ public class RenderingUtils {
                     "SELECT ws FROM WellSample AS ws" +
                     "  RIGHT OUTER JOIN FETCH ws.image AS i" +
                     "  LEFT OUTER JOIN FETCH ws.well AS w" +
+                    "  LEFT OUTER JOIN FETCH w.plateacquisition as pa" +
                     "  LEFT OUTER JOIN FETCH w.plate AS p" +
                     "  WHERE i.id IN :ids",
                     params, ctx

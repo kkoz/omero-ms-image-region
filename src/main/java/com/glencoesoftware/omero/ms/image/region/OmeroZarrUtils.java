@@ -59,6 +59,8 @@ public class OmeroZarrUtils {
     private static final String MULTISCALES_KEY = "multiscales";
     private static final String MINMAX_KEY = "minmax";
     private static final String OMERO_KEY = "omero";
+    private static final String PLATE_KEY = "plate";
+    private static final String WELL_KEY = "well";
     private static final String LABELS = "labels";
 
     public static final String ZARR_EXTN = ".zarr";
@@ -213,26 +215,50 @@ public class OmeroZarrUtils {
         String ngffDir, Long filesetId, Integer series,
         Integer resolutionLevel, Optional<WellSampleI> opWellSample)
             throws IOException {
+        if (opWellSample.isPresent()) {
+            Path platePath = getPlatePath(ngffDir, filesetId, series,
+                    resolutionLevel, opWellSample);
+            if (platePath != null) {
+                return platePath;
+            }
+        }
+        Path imageDataPath = getLocalOrS3Path(ngffDir);
+        return imageDataPath.resolve(Long.toString(filesetId)
+                + ZARR_EXTN).resolve(Integer.toString(series))
+                .resolve(Integer.toString(resolutionLevel));
+    }
+
+    private Path getPlatePath(String ngffDir, Long filesetId, Integer series,
+        Integer resolutionLevel, Optional<WellSampleI> opWellSample) throws IOException {
         Path imageDataPath = getLocalOrS3Path(ngffDir);
         imageDataPath = imageDataPath.resolve(Long.toString(filesetId)
                 + ZARR_EXTN);
-        if (opWellSample.isPresent()) {
-            WellSample ws = opWellSample.get();
-            String columnNamingConvention = ws.getWell().getPlate()
-                    .getColumnNamingConvention().getValue();
-            String rowNamingConvention = ws.getWell().getPlate()
-                    .getRowNamingConvention().getValue();
-            int row = ws.getWell().getRow().getValue();
-            int col = ws.getWell().getColumn().getValue();
-            imageDataPath = imageDataPath.resolve(Integer.toString(row))
-                    .resolve(Integer.toString(col))
+        WellSample ws = opWellSample.get();
+        String columnNamingConvention = ws.getWell().getPlate()
+                .getColumnNamingConvention().getValue();
+        String rowNamingConvention = ws.getWell().getPlate()
+                .getRowNamingConvention().getValue();
+        int row = ws.getWell().getRow().getValue();
+        int col = ws.getWell().getColumn().getValue();
+        JsonObject plateMetadata = getPlateMetadata(ngffDir, filesetId);
+        JsonArray jsonWells = plateMetadata.getJsonArray("wells");
+        String wellPath = null;
+        for (int i = 0; i < jsonWells.size(); i++) {
+            JsonObject well = jsonWells.getJsonObject(i);
+            int ridx = well.getInteger("row_index");
+            int cidx = well.getInteger("col_index");
+            if (ridx == row && cidx == col) {
+                wellPath = well.getString("path");
+                break;
+            }
+        }
+        if (wellPath == null) {
+            return null;
+        } else {
+            return imageDataPath.resolve(wellPath)
                     .resolve(series.toString())
                     .resolve(resolutionLevel.toString());
-        } else {
-            imageDataPath = imageDataPath.resolve(Integer.toString(series))
-                    .resolve(Integer.toString(resolutionLevel));
         }
-        return imageDataPath;
     }
 
     /**
@@ -824,25 +850,73 @@ public class OmeroZarrUtils {
                 return null;
             }
             Path ngffPath = basePath.resolve(Long.toString(filesetId)
-                    + ".zarr").resolve(Integer.toString(series));
+                    + ZARR_EXTN).resolve(Integer.toString(series));
+            return getMetadata(ngffDir, ngffPath, OMERO_KEY);
+        } finally {
+            span.finish();
+        }
+    }
+
+    public JsonObject getPlateMetadata(String ngffDir, long filesetId) {
+        ScopedSpan span = Tracing.currentTracer()
+                .startScopedSpan("zarr_get_plate_metadata");
+        try {
+            Path basePath;
             try {
-                ZarrGroup zarrGroup = ZarrGroup.open(ngffPath);
-                JsonObject jsonAttrs = new JsonObject(
-                        ZarrUtils.toJson(zarrGroup.getAttributes()));
-                if (!jsonAttrs.containsKey(OMERO_KEY)) {
-                    return null;
-                }
-                try {
-                    return jsonAttrs.getJsonObject(OMERO_KEY);
-                } catch (Exception e) {
-                    log.debug("Getting omero metadata as string");
-                    return new JsonObject(jsonAttrs.getString(OMERO_KEY));
-                }
-            } catch (Exception e) {
-                log.error("Error getting omero metadata from zarr");
+                basePath = getLocalOrS3Path(ngffDir);
+            } catch (IOException e) {
+                log.error("Error getting metadata from S3", e);
                 span.error(e);
                 return null;
             }
+            Path ngffPath = basePath.resolve(Long.toString(filesetId)
+                    + ZARR_EXTN);
+            return getMetadata(ngffDir, ngffPath, PLATE_KEY);
+        } finally {
+            span.finish();
+        }
+    }
+
+    public JsonObject getWellMetadata(String ngffDir, long filesetId, String wellPath) {
+        ScopedSpan span = Tracing.currentTracer()
+                .startScopedSpan("zarr_get_plate_metadata");
+        try {
+            Path basePath;
+            try {
+                basePath = getLocalOrS3Path(ngffDir);
+            } catch (IOException e) {
+                log.error("Error getting metadata from S3", e);
+                span.error(e);
+                return null;
+            }
+            Path ngffPath = basePath.resolve(Long.toString(filesetId)
+                    + ZARR_EXTN).resolve(wellPath);
+            return getMetadata(ngffDir, ngffPath, WELL_KEY);
+        } finally {
+            span.finish();
+        }
+    }
+
+    public JsonObject getMetadata(String ngffDir, Path ngffPath, String key) {
+        ScopedSpan span = Tracing.currentTracer()
+                .startScopedSpan("zarr_get_metadata");
+    try {
+            ZarrGroup zarrGroup = ZarrGroup.open(ngffPath);
+            JsonObject jsonAttrs = new JsonObject(
+                    ZarrUtils.toJson(zarrGroup.getAttributes()));
+            if (!jsonAttrs.containsKey(key)) {
+                return null;
+            }
+            try {
+                return jsonAttrs.getJsonObject(key);
+            } catch (Exception e) {
+                log.debug("Getting omero metadata as string");
+                return new JsonObject(jsonAttrs.getString(key));
+            }
+        } catch (Exception e) {
+            log.error("Error getting omero metadata from zarr");
+            span.error(e);
+            return null;
         } finally {
             span.finish();
         }
