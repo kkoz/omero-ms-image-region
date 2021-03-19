@@ -246,7 +246,7 @@ public class OmeroZarrUtils {
         for (int i = 0; i < jsonWells.size(); i++) {
             JsonObject well = jsonWells.getJsonObject(i);
             int ridx = well.getInteger("row_index");
-            int cidx = well.getInteger("col_index");
+            int cidx = well.getInteger("column_index");
             if (ridx == row && cidx == col) {
                 wellPath = well.getString("path");
                 break;

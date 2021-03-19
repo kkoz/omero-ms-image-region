@@ -46,6 +46,7 @@ import omero.api.IPixelsPrx;
 import omero.api.IQueryPrx;
 import omero.api.ServiceFactoryPrx;
 import omero.model.IObject;
+import omero.model.PlateAcquisitionI;
 import omero.model.WellSample;
 import omero.model.WellSampleI;
 import omero.sys.ParametersI;
@@ -227,13 +228,15 @@ public class RenderingUtils {
                     "SELECT ws FROM WellSample AS ws" +
                     "  RIGHT OUTER JOIN FETCH ws.image AS i" +
                     "  LEFT OUTER JOIN FETCH ws.well AS w" +
-                    "  LEFT OUTER JOIN FETCH w.plateacquisition as pa" +
                     "  LEFT OUTER JOIN FETCH w.plate AS p" +
                     "  WHERE i.id IN :ids",
                     params, ctx
                 );
             for (IObject ob : wellSamples) {
                 WellSampleI ws = (WellSampleI) ob;
+                List<Long> plateIds = new ArrayList<Long>();
+                plateIds.add(ws.getWell().getPlate().getId().getValue());
+                Map<Long, List<PlateAcquisitionI>> pas = getPlateAcquisitions(iQuery, plateIds);
                 return Optional.of(ws);
             }
         } catch (Exception e) {
@@ -243,6 +246,41 @@ public class RenderingUtils {
             span.finish();
         }
         return Optional.empty();
+    }
+
+    public static Map<Long, List<PlateAcquisitionI>> getPlateAcquisitions(IQueryPrx iQuery, List<Long> plateIds) {
+        ScopedSpan span =
+                Tracing.currentTracer().startScopedSpan("get_wellsample");
+        try {
+            Map<String, String> ctx = new HashMap<String, String>();
+            ctx.put("omero.group", "-1");
+            ParametersI params = new ParametersI();
+            params.addIds(plateIds);
+            List<IObject> plateAcquisitions = iQuery.findAllByQuery(
+                    "SELECT pa FROM PlateAcquisition AS pa" +
+                     "  WHERE pa.plate.id IN :ids ",
+                    params, ctx
+                );
+            Map<Long, List<PlateAcquisitionI>> plateIdsToAcqusitionIds =
+                    new HashMap<Long, List<PlateAcquisitionI>>();
+            for (IObject ob : plateAcquisitions) {
+                PlateAcquisitionI pa = (PlateAcquisitionI) ob;
+                if (plateIdsToAcqusitionIds.containsKey(pa.getPlate().getId().getValue())) {
+                    plateIdsToAcqusitionIds.get(pa.getPlate().getId().getValue()).add(pa);
+                } else {
+                    plateIdsToAcqusitionIds.put(pa.getPlate().getId().getValue(),
+                            new ArrayList<PlateAcquisitionI>());
+                    plateIdsToAcqusitionIds.get(pa.getPlate().getId().getValue()).add(pa);
+                }
+            }
+            return plateIdsToAcqusitionIds;
+        } catch (Exception e) {
+            span.error(e);
+            log.error("Exception while retrieving image region", e);
+        } finally {
+            span.finish();
+        }
+        return new HashMap<Long, List<PlateAcquisitionI>>();
     }
 
 
