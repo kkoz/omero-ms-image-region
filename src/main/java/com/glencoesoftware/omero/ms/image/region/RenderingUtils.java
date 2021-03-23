@@ -44,10 +44,7 @@ import omero.RType;
 import omero.ServerError;
 import omero.api.IPixelsPrx;
 import omero.api.IQueryPrx;
-import omero.api.ServiceFactoryPrx;
 import omero.model.IObject;
-import omero.model.PlateAcquisitionI;
-import omero.model.WellSample;
 import omero.model.WellSampleI;
 import omero.sys.ParametersI;
 import omero.util.IceMapper;
@@ -214,7 +211,7 @@ public class RenderingUtils {
         }
     }
 
-    public static Optional<WellSampleI> getWellSample(IQueryPrx iQuery, Long imageId) {
+    public static Optional<WellSampleI> getWellSampleWithPlate(IQueryPrx iQuery, Long imageId) {
         ScopedSpan span =
                 Tracing.currentTracer().startScopedSpan("get_wellsample");
         try {
@@ -231,6 +228,35 @@ public class RenderingUtils {
                     "  LEFT OUTER JOIN FETCH ws.plateAcquisition AS pa" +
                     "  LEFT OUTER JOIN FETCH w.plate AS p" +
                     "  WHERE i.id IN :ids",
+                    params, ctx
+                );
+            for (IObject ob : wellSamples) {
+                WellSampleI ws = (WellSampleI) ob;
+                return Optional.of(ws);
+            }
+        } catch (Exception e) {
+            span.error(e);
+            log.error("Exception while retrieving image region", e);
+        } finally {
+            span.finish();
+        }
+        return Optional.empty();
+    }
+
+    public static Optional<WellSampleI> getWellSample(IQueryPrx iQuery, Long imageId) {
+        ScopedSpan span =
+                Tracing.currentTracer().startScopedSpan("get_wellsample");
+        try {
+            Map<String, String> ctx = new HashMap<String, String>();
+            ctx.put("omero.group", "-1");
+            ParametersI params = new ParametersI();
+            List<Long> ids = new ArrayList<Long>();
+            ids.add(imageId);
+            params.addIds(ids);
+            List<IObject> wellSamples = iQuery.findAllByQuery(
+                    "SELECT ws FROM WellSample AS ws" +
+                    "  LEFT OUTER JOIN FETCH ws.well AS w" +
+                    "  WHERE ws.image.id IN :ids",
                     params, ctx
                 );
             for (IObject ob : wellSamples) {

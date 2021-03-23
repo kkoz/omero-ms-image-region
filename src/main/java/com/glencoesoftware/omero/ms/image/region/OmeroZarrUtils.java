@@ -216,7 +216,7 @@ public class OmeroZarrUtils {
         Integer resolutionLevel, Optional<WellSampleI> opWellSample)
             throws IOException {
         if (opWellSample.isPresent()) {
-            Path platePath = getPlatePath(ngffDir, filesetId, series,
+            Path platePath = getPlatePathFromMetadata(ngffDir, filesetId, series,
                     resolutionLevel, opWellSample);
             if (platePath != null) {
                 return platePath;
@@ -227,6 +227,35 @@ public class OmeroZarrUtils {
                 + ZARR_EXTN).resolve(Integer.toString(series))
                 .resolve(Integer.toString(resolutionLevel));
     }
+
+    private Path getPlatePathFromMetadata(String ngffDir, Long filesetId, Integer series,
+            Integer resolutionLevel, Optional<WellSampleI> opWellSample) throws IOException {
+            Path imageDataPath = getLocalOrS3Path(ngffDir);
+            imageDataPath = imageDataPath.resolve(Long.toString(filesetId)
+                    + ZARR_EXTN);
+            WellSample ws = opWellSample.get();
+            int row = ws.getWell().getRow().getValue();
+            int col = ws.getWell().getColumn().getValue();
+            JsonObject plateMetadata = getPlateMetadata(ngffDir, filesetId);
+            JsonArray jsonWells = plateMetadata.getJsonArray("wells");
+            String wellPath = null;
+            for (int i = 0; i < jsonWells.size(); i++) {
+                JsonObject well = jsonWells.getJsonObject(i);
+                int ridx = well.getInteger("row_index");
+                int cidx = well.getInteger("column_index");
+                if (ridx == row && cidx == col) {
+                    wellPath = well.getString("path");
+                    break;
+                }
+            }
+            if (wellPath == null) {
+                return null;
+            } else {
+                return imageDataPath.resolve(wellPath)
+                        .resolve(series.toString())
+                        .resolve(resolutionLevel.toString());
+            }
+        }
 
     private Path getPlatePath(String ngffDir, Long filesetId, Integer series,
         Integer resolutionLevel, Optional<WellSampleI> opWellSample) throws IOException {
