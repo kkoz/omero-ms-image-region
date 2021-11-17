@@ -725,7 +725,7 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                     response.headers().set("Content-Type", "application/json");
                     response.headers().set(
                             "Content-Length",
-                            String.valueOf(rv.length()));
+                            String.valueOf(rv.getBytes().length));
                     response.write(rv);
                 }
             } finally {
