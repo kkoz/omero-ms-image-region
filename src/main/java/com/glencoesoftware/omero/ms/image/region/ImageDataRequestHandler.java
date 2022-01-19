@@ -18,6 +18,8 @@
 
 package com.glencoesoftware.omero.ms.image.region;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -138,6 +140,7 @@ public class ImageDataRequestHandler {
         }
         return null;
     }
+
 
     /**
      * Takes populated Omero model objects and populates the data into

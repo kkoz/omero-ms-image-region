@@ -67,6 +67,9 @@ public class ImageRegionVerticle extends OmeroMsAbstractVerticle {
     public static final String GET_IMAGE_DATA =
             "omero.get_image_data";
 
+    public static final String INITIALIZE_ZARR =
+            "omero.initialize_zarr";
+
     /** OMERO server host */
     private String host;
 
@@ -139,6 +142,8 @@ public class ImageRegionVerticle extends OmeroMsAbstractVerticle {
                     GET_THUMBNAILS_EVENT, this::getThumbnails);
             vertx.eventBus().<String>consumer(
                     GET_IMAGE_DATA, this::getImageData);
+            vertx.eventBus().<String>consumer(
+                    INITIALIZE_ZARR, this::initializeZarr);
         } catch (Exception e) {
             startPromise.fail(e);
         }
@@ -398,6 +403,47 @@ public class ImageRegionVerticle extends OmeroMsAbstractVerticle {
             message.fail(403, v);
         } catch (Exception e) {
             String v = "Exception while getting image data";
+            log.error(v, e);
+            message.fail(500, v);
+        } finally {
+            span.finish();
+        }
+    }
+
+    private void initializeZarr(Message<String> message) {
+        ObjectMapper mapper = new ObjectMapper();
+        ZarrInitializerCtx zarrInitCtx;
+        try {
+            zarrInitCtx = mapper.readValue(message.body(), ZarrInitializerCtx.class);
+        } catch (Exception e) {
+            String v = "Illegal image data context";
+            log.error(v + ": {}", message.body(), e);
+            message.fail(400, v);
+            return;
+        }
+        ScopedSpan span = Tracing.currentTracer().startScopedSpanWithParent(
+                "initialize_zarr",
+                extractor().extract(zarrInitCtx.traceContext).context());
+        String omeroSessionKey = zarrInitCtx.omeroSessionKey;
+        log.debug("Initialize zarr request: {}", zarrInitCtx.toString());
+        JsonObject omeroServer = config().getJsonObject("omero.server");
+        try (OmeroRequest request = new OmeroRequest(
+                host, port, omeroSessionKey)) {
+                JsonObject zarrJsonInfo = request.execute(
+                    new ZarrInitializerHandler(zarrInitCtx,
+                            pixelsService)::initializeZarr);
+                if (zarrJsonInfo == null) {
+                    message.fail(404, "Failed to initialize Zarr");
+                    return;
+                }
+                message.reply(zarrJsonInfo.toString());
+        } catch (PermissionDeniedException
+                 | CannotCreateSessionException e) {
+            String v = "Permission denied";
+            log.debug(v);
+            message.fail(403, v);
+        } catch (Exception e) {
+            String v = "Exception while initializing zarr";
             log.error(v, e);
             message.fail(500, v);
         } finally {

@@ -50,12 +50,14 @@ import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.json.JsonCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.micrometer.PrometheusScrapingHandler;
 import ome.system.PreferenceContext;
 import omero.model.Image;
@@ -387,6 +389,10 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
         router.get(
                 "/webclient/get_thumbnails_ngff*")
             .handler(this::getThumbnails);
+
+        router.route("/webgateway/initZarr*").order(-3).handler(BodyHandler.create());
+        router.post("/webgateway/initZarr/:imageId*").handler(this::initializeZarr);
+
 
         MAX_ACTIVE_CHANNELS = config.getInteger("max-active-channels", 6);
 
@@ -824,6 +830,60 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
                     response.end();
                 }
                 log.debug("Response ended");
+            }
+        });
+    }
+
+    /**
+     * Get image data event handler.
+     * Responds with JSON payload of image data on success based
+     * on the <code>imageId</code> encoded in the URL or HTTP 404 if the
+     * Image does not exist or the user does not have permissions to
+     * access it.
+     * @param event Current routing context.
+     */
+    private void initializeZarr(RoutingContext event) {
+        log.info("Initializing Zarr");
+        HttpServerRequest request = event.request();
+        final HttpServerResponse response = event.response();
+        JsonObject data = null;
+        try {
+            data = event.getBodyAsJson();
+        } catch (DecodeException e) {
+            response.setStatusCode(400);
+            response.end("Malformed JSON");
+        }
+        log.info("JSON from client:");
+        log.info(data.toString());
+        ZarrInitializerCtx zarrInitCtx = null;
+        try {
+            zarrInitCtx = new ZarrInitializerCtx(request.params(),
+                event.get("omero.session_key"), data.toString());
+        } catch (Exception e) {
+            log.error("Error creating ImageDataCtx", e);
+            if (!response.closed()) {
+                response.setStatusCode(400).end();
+            }
+            return;
+        }
+        zarrInitCtx.injectCurrentTraceContext();
+        vertx.eventBus().<String>request(
+                ImageRegionVerticle.INITIALIZE_ZARR,
+                Json.encode(zarrInitCtx), result -> {
+            String resContent = null;
+            try {
+                if (handleResultFailed(result, response)) {
+                    return;
+                }
+                resContent = result.result().body();
+                if (resContent == null) {
+                    resContent = "Failed to initialize Zarr";
+                }
+                response.headers().set("Content-Type", "application/json");
+            } finally {
+                if (!response.closed()) {
+                    response.end(resContent);
+                }
             }
         });
     }
