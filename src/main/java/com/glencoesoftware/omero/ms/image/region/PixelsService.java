@@ -227,5 +227,9 @@ public class PixelsService extends ome.io.nio.PixelsService {
         return _getPixelBuffer(pixels, write);
     }
 
+    public void createParentDirs(String path) {
+        this.createSubpath(path);
+    }
+
 }
 

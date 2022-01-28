@@ -1,9 +1,26 @@
 package com.glencoesoftware.omero.ms.image.region;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+
+import javax.crypto.Cipher;
 
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +67,7 @@ public class ZarrInitializerHandler {
 
 
     public JsonObject initializeZarr(omero.client client) {
+
         ServiceFactoryPrx sf = client.getSession();
         try {
             Long imageId = zarrInitCtx.imageId;
@@ -66,8 +84,9 @@ public class ZarrInitializerHandler {
             }
             //Write JSON file
             StringBuilder sb = new StringBuilder();
-            sb.append(pixelsService.getPixelsDirectory());
-            sb.append(image.getId().getValue());
+            String pixPath = pixelsService.getPixelsPath(image.getPrimaryPixels().getId().getValue());
+            log.info(pixPath);
+            sb.append(pixPath);
             sb.append("_zarr.json");
             log.info(sb.toString());
             File f = new File(sb.toString());
@@ -78,9 +97,43 @@ public class ZarrInitializerHandler {
                 retVal.put("error", "Zarr JSON file already exists");
                 return retVal;
             } else {
+                JsonObject jsonData = new JsonObject(zarrInitCtx.jsonData);
+                JsonObject dataToWrite = new JsonObject();
+                if (jsonData.containsKey("publicKey")) {
+                    try {
+                        String publicKey = jsonData.getString("publicKey")
+                                .replace("-----BEGIN PUBLIC KEY-----", "")
+                                .replaceAll(System.lineSeparator(), "")
+                                .replace("-----END PUBLIC KEY-----", "");
+                        log.info(publicKey);
+                        log.info(Integer.toString(publicKey.length()));
+                        byte[] decoded = Base64.getDecoder().decode(publicKey);
+                        byte[] fromFile = Files.readAllBytes(Paths.get("/OMERO56/Pixels/keys/public.der"));
+                        log.info("Same as der: " + Boolean.toString(Arrays.equals(decoded, fromFile)));
+
+                        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(fromFile);
+                        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+                        PublicKey rsaPubKey = keyFactory.generatePublic(keySpec);
+                        Cipher encryptCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA1AndMGF1Padding");
+                        encryptCipher.init(Cipher.ENCRYPT_MODE, rsaPubKey);
+                        String zarrPath = jsonData.getString("zarrPath");
+                        log.info("About to encode: " + zarrPath);
+                        byte[] encryptedZarrPath = encryptCipher.doFinal(zarrPath.getBytes(StandardCharsets.UTF_8));
+                        String encryptedString = Base64.getEncoder().encodeToString(encryptedZarrPath);
+                        dataToWrite.put("zarrPath", encryptedString);
+                        dataToWrite.put("publicKey", jsonData.getString("publicKey"));
+                    } catch (Exception e) {
+                        log.error("Failed to encrypt zarrPath", e);
+                        return null;
+                    }
+                }
+                else {
+                    dataToWrite = jsonData;
+                }
+                pixelsService.createParentDirs(pixPath);
                 f.createNewFile();
                 FileWriter fw = new FileWriter(f);
-                fw.write(zarrInitCtx.jsonData);
+                fw.write(dataToWrite.toString());
                 fw.close();
                 JsonObject retVal = new JsonObject();
                 retVal.put("zarrJsonPath", sb.toString());
@@ -106,10 +159,6 @@ public class ZarrInitializerHandler {
             Image image = (Image) iQuery
                     .findByQuery("select i from Image as i "
                             + " join fetch i.pixels as p"
-                            + " left outer JOIN FETCH i.datasetLinks as links "
-                            + " left outer join fetch links.parent as dataset "
-                            + " left outer join fetch dataset.projectLinks as plinks "
-                            + " left outer join fetch plinks.parent as project "
                             + " join fetch i.details.owner as owner "
                             + " join fetch i.details.creationEvent "
                             + " where i.id=:id", params, ctx);
