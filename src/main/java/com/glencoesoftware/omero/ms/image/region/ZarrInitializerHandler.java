@@ -99,17 +99,9 @@ public class ZarrInitializerHandler {
             } else {
                 JsonObject jsonData = new JsonObject(zarrInitCtx.jsonData);
                 JsonObject dataToWrite = new JsonObject();
-                if (jsonData.containsKey("publicKey")) {
+                if (jsonData.containsKey("encrypted") && jsonData.getBoolean("encrypted")) {
                     try {
-                        String publicKey = jsonData.getString("publicKey")
-                                .replace("-----BEGIN PUBLIC KEY-----", "")
-                                .replaceAll(System.lineSeparator(), "")
-                                .replace("-----END PUBLIC KEY-----", "");
-                        log.info(publicKey);
-                        log.info(Integer.toString(publicKey.length()));
-                        byte[] decoded = Base64.getDecoder().decode(publicKey);
                         byte[] fromFile = Files.readAllBytes(Paths.get("/OMERO56/Pixels/keys/public.der"));
-                        log.info("Same as der: " + Boolean.toString(Arrays.equals(decoded, fromFile)));
 
                         X509EncodedKeySpec keySpec = new X509EncodedKeySpec(fromFile);
                         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
@@ -121,7 +113,6 @@ public class ZarrInitializerHandler {
                         byte[] encryptedZarrPath = encryptCipher.doFinal(zarrPath.getBytes(StandardCharsets.UTF_8));
                         String encryptedString = Base64.getEncoder().encodeToString(encryptedZarrPath);
                         dataToWrite.put("zarrPath", encryptedString);
-                        dataToWrite.put("publicKey", jsonData.getString("publicKey"));
                     } catch (Exception e) {
                         log.error("Failed to encrypt zarrPath", e);
                         return null;
