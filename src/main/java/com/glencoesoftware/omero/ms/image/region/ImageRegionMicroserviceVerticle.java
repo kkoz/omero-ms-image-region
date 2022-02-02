@@ -391,7 +391,7 @@ public class ImageRegionMicroserviceVerticle extends AbstractVerticle {
             .handler(this::getThumbnails);
 
         router.route("/webgateway/initZarr*").order(-3).handler(BodyHandler.create());
-        router.post("/webgateway/initZarr/:imageId*").handler(this::initializeZarr);
+        router.post("/webgateway/initZarr/:filesetId*").handler(this::initializeZarr);
 
 
         MAX_ACTIVE_CHANNELS = config.getInteger("max-active-channels", 6);

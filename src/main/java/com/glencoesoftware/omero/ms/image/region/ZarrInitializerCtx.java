@@ -13,7 +13,7 @@ public class ZarrInitializerCtx extends OmeroRequestCtx {
             LoggerFactory.getLogger(ZarrInitializerCtx.class);
 
     /** Image ID to initialize */
-    public Long imageId;
+    public Long filesetId;
 
     public String jsonData;
 
@@ -21,7 +21,7 @@ public class ZarrInitializerCtx extends OmeroRequestCtx {
 
     public ZarrInitializerCtx(MultiMap params, String omeroSessionKey, String jsonData) {
         this.omeroSessionKey = omeroSessionKey;
-        this.imageId = Long.parseLong(params.get("imageId"));
+        this.filesetId = Long.parseLong(params.get("filesetId"));
         this.jsonData = jsonData;
     }
 }
