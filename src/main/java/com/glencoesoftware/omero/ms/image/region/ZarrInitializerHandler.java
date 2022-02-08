@@ -136,6 +136,9 @@ public class ZarrInitializerHandler {
                     else {
                         dataToWrite.put("zarrPath", zarrPath);
                     }
+                    if (jsonData.containsKey("credentials_name")) {
+                        dataToWrite.put("credentials_name", jsonData.getString("credentials_name"));
+                    }
                     pixelsService.createParentDirs(pixPath);
                     f.createNewFile();
                     FileWriter fw = new FileWriter(f);
