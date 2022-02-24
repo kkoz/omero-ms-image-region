@@ -82,6 +82,7 @@ public class ZarrPixelBuffer implements PixelBuffer {
      */
     public ZarrPixelBuffer(Pixels pixels, Path root, Integer maxTileLength)
             throws IOException {
+        log.info("Creating ZarrPixelBuffer with root " + root.toString());
         this.pixels = pixels;
         this.root = root;
         rootGroup = ZarrGroup.open(this.root);
@@ -693,7 +694,6 @@ public class ZarrPixelBuffer implements PixelBuffer {
 
     @Override
     public int getResolutionLevel() {
-        // The pixel buffer API reverses the resolution level (0 is smallest)
         return Math.abs(
                 resolutionLevel - (resolutionLevels - 1));
     }
@@ -705,8 +705,13 @@ public class ZarrPixelBuffer implements PixelBuffer {
                     "Resolution level out of bounds!");
         }
         // The pixel buffer API reverses the resolution level (0 is smallest)
+
         this.resolutionLevel = Math.abs(
                 resolutionLevel - (resolutionLevels - 1));
+        if (this.resolutionLevel < 0) {
+            throw new IllegalArgumentException(
+                    "This Zarr file has no pixel data");
+        }
         try {
             array = ZarrArray.open(
                     root.resolve(Integer.toString(this.resolutionLevel)));

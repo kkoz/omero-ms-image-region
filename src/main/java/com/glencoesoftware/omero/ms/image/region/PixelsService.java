@@ -23,14 +23,20 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Iterator;
 
+
 import org.slf4j.LoggerFactory;
 
+import io.vertx.core.json.JsonObject;
+import loci.formats.meta.IMinMaxStore;
 import ome.api.IQuery;
+import ome.io.bioformats.BfPixelBuffer;
 import ome.io.nio.BackOff;
 import ome.io.nio.FilePathResolver;
 import ome.io.nio.PixelBuffer;
@@ -39,6 +45,7 @@ import ome.model.core.Image;
 import ome.model.core.Pixels;
 import ome.model.screen.Well;
 import ome.model.screen.WellSample;
+
 
 /**
  * Subclass which overrides series retrieval to avoid the need for
@@ -49,23 +56,25 @@ import ome.model.screen.WellSample;
 public class PixelsService extends ome.io.nio.PixelsService {
 
     private static final org.slf4j.Logger log =
-            LoggerFactory.getLogger(ImageRegionRequestHandler.class);
-
-    /** NGFF directory root */
-    private final Path ngffDir;
+            LoggerFactory.getLogger(PixelsService.class);
 
     /** Max Tile Length */
     private final Integer maxTileLength;
 
+    private CredentialsManager credentialsManager;
+
     public PixelsService(
             String path, long memoizerWait, FilePathResolver resolver,
-            BackOff backOff, TileSizes sizes, IQuery iQuery, String ngffDir,
+            BackOff backOff, TileSizes sizes, IQuery iQuery,
             Integer maxTileLength) throws IOException {
         super(
             path, true, new File(new File(path), "BioFormatsCache"),
             memoizerWait, resolver, backOff, sizes, iQuery);
-        this.ngffDir = asPath(ngffDir);
         this.maxTileLength = maxTileLength;
+        //this.credentialsManager = new NamedCredentialsManager(
+        //        "/OMERO56/Pixels/credentials/ngffcreds.json");
+        this.credentialsManager = new BucketCredentialsManager(
+                "/OMERO56/Pixels/credentials/ngffcreds.json");
     }
 
     /**
@@ -95,7 +104,12 @@ public class PixelsService extends ome.io.nio.PixelsService {
                 // FIXME: We might want to support additional S3FS settings in
                 // the future.  See:
                 //   * https://github.com/lasersonlab/Amazon-S3-FileSystem-NIO
-                FileSystem fs = FileSystems.newFileSystem(endpoint, null);
+                FileSystem fs = null;
+                try {
+                    fs = FileSystems.getFileSystem(endpoint);
+                } catch (FileSystemNotFoundException e) {
+                    fs = FileSystems.newFileSystem(endpoint, null);
+                }
                 return fs.getPath(bucket, rest);
             }
         } catch (URISyntaxException e) {
@@ -192,10 +206,9 @@ public class PixelsService extends ome.io.nio.PixelsService {
      */
     public ZarrPixelBuffer getLabelImagePixelBuffer(Pixels pixels, String uuid)
             throws IOException {
-        if (ngffDir == null) {
-            throw new IllegalArgumentException("NGFF dir not configured");
-        }
-        Path root = ngffDir.resolve(getLabelImageSubPath(pixels, uuid));
+
+        Path root = asPath(getZarrPathStr(pixels));
+        root = root.resolve(getLabelImageSubPath(pixels, uuid));
         return new ZarrPixelBuffer(pixels, root, maxTileLength);
     }
 
@@ -211,9 +224,12 @@ public class PixelsService extends ome.io.nio.PixelsService {
      */
     @Override
     public PixelBuffer getPixelBuffer(Pixels pixels, boolean write) {
-        if (ngffDir != null) {
+        try {
+            String zarrPathStr = getZarrPathStr(pixels);
+            log.info(zarrPathStr);
+            Path root = asPath(getZarrPathStr(pixels));
+            log.info("ROOT IS: " + root.toString());
             try {
-                Path root = ngffDir.resolve(getImageSubPath(pixels));
                 PixelBuffer v =
                         new ZarrPixelBuffer(pixels, root, maxTileLength);
                 log.info("Using NGFF Pixel Buffer");
@@ -223,12 +239,80 @@ public class PixelsService extends ome.io.nio.PixelsService {
                     "Getting NGFF Pixel Buffer failed - " +
                     "attempting to get local data", e);
             }
+        } catch (IOException e1) {
+            log.error("Failed to find zarr path for image " +
+                      Long.toString(pixels.getImage().getId()));
         }
         return _getPixelBuffer(pixels, write);
     }
 
-    public void createParentDirs(String path) {
-        this.createSubpath(path);
+    @Override
+    public PixelBuffer _getPixelBuffer(Pixels pixels, boolean write) {
+        log.info("In Backbone _getPixelBuffer");
+        return super._getPixelBuffer(pixels, write);
+    }
+
+    public String getZarrPathStr(Pixels pixels) throws IOException {
+        File zarrJson = getZarrJsonFile(pixels);
+        log.info(zarrJson.getAbsolutePath());
+        return getZarrPathFromJson(zarrJson);
+    }
+
+    public File getZarrJsonFile(Pixels pixels) {
+        StringBuilder sb = new StringBuilder();
+        String pixPath = getPixelsPath(pixels.getId());
+        log.info(pixPath);
+        sb.append(pixPath);
+        sb.append("_zarr.json");
+        File f = new File(sb.toString());
+        if (!f.exists()) {
+            log.error("Missing zarr json file at " + sb.toString());
+            return null;
+        }
+        return f;
+    }
+
+    public File findFile(File file, String filename) {
+        if (file.isDirectory()) {
+            for(File f : file.listFiles()) {
+                File found = findFile(f, filename);
+                if (found != null) {
+                    return f;
+                }
+            }
+        } else {
+            if(file.getName().equals(filename)) {
+                return file;
+            } else {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    public String getZarrPathFromJson(File zarrJson) throws IOException {
+        String jsonString =  new String(Files.readAllBytes(zarrJson.toPath()));
+        JsonObject jsonObj = new JsonObject(jsonString);
+        log.info(jsonObj.toString());
+        String zarrPath = credentialsManager.injectCredentials(jsonObj);
+        return zarrPath;
+    }
+
+    protected BfPixelBuffer createBfPixelBuffer(final String filePath,
+            final int series) {
+        log.info("In Backbone createBfPixelBuffer");
+        return super.createBfPixelBuffer(filePath, series);
+    }
+
+    protected BfPixelBuffer createMinMaxBfPixelBuffer(final String filePath,
+            final int series,
+            final IMinMaxStore store) {
+        log.info("In Backbone createMinMaxPixelBuffer");
+        return super.createMinMaxBfPixelBuffer(filePath, series, store);
+    }
+
+    public void createParentDirs(String pixPath) {
+        this.createSubpath(pixPath);
     }
 
 }
