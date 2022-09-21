@@ -60,6 +60,39 @@ public class CliHelper {
 
     String filePath;
 
+    //Region Def settings
+    final private long imageId = 123;
+    final private int z = 0;
+    final private int t = 0;
+    final private float q = 0.8f;
+    // region
+    final private int regionX = 0;
+    final private int regionY = 0;
+    final private int regionWidth = 1024;
+    final private int regionHeight = 1024;
+    final private String region = String.format(
+            "%d,%d,%d,%d", regionX, regionY, regionWidth, regionHeight);
+    // Channel info
+    final private int channel0 = 1;
+    final private int channel1 = 2;
+    final private int channel2 = 3;
+    final private double[] window0 = new double[]{0, 255};
+    final private double[] window1 = new double[]{0, 255};
+    final private double[] window2 = new double[]{0, 255};
+    final private String color0 = "0000FF";
+    final private String color1 = "00FF00";
+    final private String color2 = "FF0000";
+    final private String c = String.format(
+            "%d|%f:%f$%s,%d|%f:%f$%s,%d|%f:%f$%s",
+            channel0, window0[0], window0[1], color0,
+            channel1, window1[0], window1[1], color1,
+            channel2, window2[0], window2[1], color2);
+    final private String maps = "[{\"reverse\": {\"enabled\": false}}, " +
+            "{\"reverse\": {\"enabled\": false}}, " +
+            "{\"reverse\": {\"enabled\": false}}]";
+
+    private MultiMap params;
+
     public CliHelper() {
     }
 
@@ -102,24 +135,6 @@ public class CliHelper {
         {
             IFormatReader reader = createBfPlusReader();
             BfPixelBufferPlus pixelBuffer = new BfPixelBufferPlus(filePath, reader);
-            pixelBuffer.setSeries(series);
-            System.out.println(String.format("Creating BfPixelBuffer: %s Series: %d",
-                    filePath, series));
-            return pixelBuffer;
-        } catch (Exception e)
-        {
-            String msg = "Error instantiating pixel buffer: " + filePath;
-            e.printStackTrace();
-            throw new ResourceError(msg);
-        }
-    }
-
-    private BfPixelBuffer createBfPixelBuffer(final String filePath,
-            final int series) {
-        try
-        {
-            IFormatReader reader = createBfReader();
-            BfPixelBuffer pixelBuffer = new BfPixelBuffer(filePath, reader);
             pixelBuffer.setSeries(series);
             System.out.println(String.format("Creating BfPixelBuffer: %s Series: %d",
                     filePath, series));
@@ -181,69 +196,15 @@ public class CliHelper {
         return rdef;
     }
 
-    /**
-     * Create an {@link IFormatReader} with the appropriate {@link loci.formats.ReaderWrapper}
-     * instances and {@link IFormatReader#setFlattenedResolutions(boolean)} set to false.
-     */
-    private IFormatReader createBfReader() {
-        IFormatReader reader = new ImageReader();
-        reader = new ChannelFiller(reader);
-        reader = new ChannelSeparator(reader);
-        reader.setFlattenedResolutions(false);
-        reader.setMetadataFiltered(true);
-        return reader;
-    }
-
     private IFormatReader createBfPlusReader() {
         IFormatReader reader = new ImageReader();
-        /*
-        reader = new ChannelFiller(reader);
         reader = new ChannelSeparator(reader);
-        */
+        reader = new ChannelFiller(reader);
         reader.setFlattenedResolutions(false);
         reader.setMetadataFiltered(true);
         return reader;
     }
 
-    final private long imageId = 123;
-    final private int z = 0;
-    final private int t = 0;
-    final private float q = 0.8f;
-    // tile
-    /*
-    final private int resolution = 0;
-    final private int tileX = 2;
-    final private int tileY = 1;
-    final private String tile = String.format(
-            "%d,%d,%d,2048,2048", resolution, tileX, tileY);
-            */
-    // region
-    final private int regionX = 0;
-    final private int regionY = 0;
-    final private int regionWidth = 1024;
-    final private int regionHeight = 1024;
-    final private String region = String.format(
-            "%d,%d,%d,%d", regionX, regionY, regionWidth, regionHeight);
-    // Channel info
-    final private int channel0 = 1;
-    final private int channel1 = 2;
-    final private int channel2 = 3;
-    final private double[] window0 = new double[]{0, 255};
-    final private double[] window1 = new double[]{0, 255};
-    final private double[] window2 = new double[]{0, 255};
-    final private String color0 = "0000FF";
-    final private String color1 = "00FF00";
-    final private String color2 = "FF0000";
-    final private String c = String.format(
-            "%d|%f:%f$%s,%d|%f:%f$%s,%d|%f:%f$%s",
-            channel0, window0[0], window0[1], color0,
-            channel1, window1[0], window1[1], color1,
-            channel2, window2[0], window2[1], color2);
-    final private String maps = "[{\"reverse\": {\"enabled\": false}}, " +
-            "{\"reverse\": {\"enabled\": false}}, " +
-            "{\"reverse\": {\"enabled\": false}}]";
-
-    private MultiMap params;
 
     private ImageRegionCtx getImageRegionCtx(String tileString) {
         params = MultiMap.caseInsensitiveMultiMap();
