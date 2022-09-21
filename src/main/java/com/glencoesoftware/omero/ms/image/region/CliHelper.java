@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2022 Glencoe Software, Inc. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 package com.glencoesoftware.omero.ms.image.region;
 
 import java.awt.Dimension;
@@ -17,8 +35,6 @@ import loci.formats.IFormatReader;
 import loci.formats.ImageReader;
 import ome.conditions.ResourceError;
 import ome.io.bioformats.BfPixelBuffer;
-import ome.io.bioformats.BfPixelBufferPlus;
-import ome.io.bioformats.RGBInterleavedReader;
 import ome.io.nio.PixelBuffer;
 import ome.model.core.Channel;
 import ome.model.core.Pixels;
@@ -84,7 +100,7 @@ public class CliHelper {
                                               final int series) {
         try
         {
-            RGBInterleavedReader reader = createBfPlusReader();
+            IFormatReader reader = createBfPlusReader();
             BfPixelBufferPlus pixelBuffer = new BfPixelBufferPlus(filePath, reader);
             pixelBuffer.setSeries(series);
             System.out.println(String.format("Creating BfPixelBuffer: %s Series: %d",
@@ -114,10 +130,11 @@ public class CliHelper {
             e.printStackTrace();
             throw new ResourceError(msg);
         }
-        }
+    }
 
     private RenderingDef getRenderingDef() {
         RenderingDef rdef = new RenderingDef();
+        rdef.setModel(new RenderingModel(Renderer.MODEL_RGB_INTERLEAVED));
         QuantumDef qdef = new QuantumDef();
         qdef.setBitResolution(QuantumFactory.DEPTH_8BIT);
         qdef.setCdStart(0);
@@ -177,16 +194,15 @@ public class CliHelper {
         return reader;
     }
 
-    private RGBInterleavedReader createBfPlusReader() {
+    private IFormatReader createBfPlusReader() {
         IFormatReader reader = new ImageReader();
         /*
         reader = new ChannelFiller(reader);
         reader = new ChannelSeparator(reader);
         */
-        RGBInterleavedReader rgbiReader = new RGBInterleavedReader(reader);
-        rgbiReader.setFlattenedResolutions(false);
-        rgbiReader.setMetadataFiltered(true);
-        return rgbiReader;
+        reader.setFlattenedResolutions(false);
+        reader.setMetadataFiltered(true);
+        return reader;
     }
 
     final private long imageId = 123;
@@ -270,6 +286,7 @@ public class CliHelper {
         families.add(new Family(Family.VALUE_LINEAR));
         List<RenderingModel> renderingModels = new ArrayList<RenderingModel>();
         renderingModels.add(new RenderingModel(RenderingModel.VALUE_RGB));
+        renderingModels.add(new RenderingModel(Renderer.MODEL_RGB_INTERLEAVED));
         QuantumFactory quantumFactory = new QuantumFactory(families);
         Renderer renderer = null;
         Pixels pixels = getPixels(pixelBuffer);

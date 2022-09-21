@@ -308,6 +308,8 @@ public class ImageRegionCtx extends OmeroRequestCtx {
             m = "greyscale";
         } else if ("c".equals(colorModel)) {
             m = "rgb";
+        } else if ("i".equals(colorModel)) {
+            m = Renderer.MODEL_RGB_INTERLEAVED;
         } else {
             m = null;
         }
