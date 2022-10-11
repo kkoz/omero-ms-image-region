@@ -61,6 +61,7 @@ import omeis.providers.re.data.RegionDef;
 import omeis.providers.re.lut.LutProvider;
 import omeis.providers.re.quantum.QuantizationException;
 import omeis.providers.re.quantum.QuantumFactory;
+import omeis.providers.re.RenderingStrategy;
 import omero.ApiUsageException;
 import omero.ServerError;
 import omero.api.IQueryPrx;
@@ -509,10 +510,11 @@ public class ImageRegionRequestHandler {
         ScopedSpan span = tracer.startScopedSpan("render_as_packed_int");
         span.tag("omero.pixels_id", pixels.getId().toString());
         Renderer renderer = null;
+
         try (PixelBuffer pixelBuffer = getPixelBuffer(pixels)) {
             renderer = new Renderer(
-                quantumFactory, renderingModels, pixels, renderingDef,
-                pixelBuffer, lutProvider
+                quantumFactory, pixels, renderingDef,
+                pixelBuffer, lutProvider, RenderingStrategy.makeNew(renderingDef.getModel())
             );
             int t = Optional.ofNullable(imageRegionCtx.t)
                     .orElse(renderingDef.getDefaultT());

@@ -149,7 +149,7 @@ public class CliHelper {
 
     private RenderingDef getRenderingDef() {
         RenderingDef rdef = new RenderingDef();
-        rdef.setModel(new RenderingModel(Renderer.MODEL_RGB_INTERLEAVED));
+        rdef.setModel(new RenderingModel("rgb-interleaved"));
         QuantumDef qdef = new QuantumDef();
         qdef.setBitResolution(QuantumFactory.DEPTH_8BIT);
         qdef.setCdStart(0);
@@ -247,13 +247,12 @@ public class CliHelper {
         families.add(new Family(Family.VALUE_LINEAR));
         List<RenderingModel> renderingModels = new ArrayList<RenderingModel>();
         renderingModels.add(new RenderingModel(RenderingModel.VALUE_RGB));
-        renderingModels.add(new RenderingModel(Renderer.MODEL_RGB_INTERLEAVED));
+        renderingModels.add(new RenderingModel("rgb-interleaved"));
         QuantumFactory quantumFactory = new QuantumFactory(families);
-        Renderer renderer = null;
         Pixels pixels = getPixels(pixelBuffer);
-        renderer = new Renderer(
-            quantumFactory, renderingModels, pixels, renderingDef,
-            pixelBuffer, getLutProvider());
+        Renderer renderer = new Renderer(
+            quantumFactory, pixels, renderingDef,
+            pixelBuffer, getLutProvider(), new RGBInterleavedStrategy());
         ImageRegionCtx imageRegionCtx = getImageRegionCtx(tileString);
         int t = Optional.ofNullable(imageRegionCtx.t)
                 .orElse(renderingDef.getDefaultT());

@@ -109,6 +109,9 @@ public class ImageRegionCtx extends OmeroRequestCtx {
     /** Whether or not to flip vertically */
     public boolean flipVertical;
 
+    /** RenderingModel requested by client */
+    public RenderingModel renderingModel;
+
     /**
      * Constructor for jackson to decode the object from string
      */
@@ -309,7 +312,7 @@ public class ImageRegionCtx extends OmeroRequestCtx {
         } else if ("c".equals(colorModel)) {
             m = "rgb";
         } else if ("i".equals(colorModel)) {
-            m = Renderer.MODEL_RGB_INTERLEAVED;
+            m = "rgb-interleaved";
         } else {
             m = null;
         }
@@ -518,7 +521,7 @@ public class ImageRegionCtx extends OmeroRequestCtx {
         }
         for (RenderingModel renderingModel : renderingModels) {
             if (m.equals(renderingModel.getValue())) {
-                renderer.setModel(renderingModel);
+                this.renderingModel = renderingModel;
                 break;
             }
         }
